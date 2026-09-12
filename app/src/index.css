@@ -2,6 +2,18 @@
 
 @import "tailwindcss";
 
+/* Tailwind v4 auto-detects content by scanning from this file's own
+   directory outward -- it never looks at ../../src, where this app
+   imports AppSwitcher/ProfileCard/etc. from directly (see
+   vite.config.ts's alias). Without this, every class used ONLY inside
+   those library files (hidden, md:flex, md:hidden, w-16, bg-switcher...)
+   never gets generated at all -- which doesn't just mis-style
+   AppSwitcher, it silently defeats the responsive hidden/md:flex pair
+   AppSwitcher and MobileAppSwitcher rely on to ever show just one of
+   themselves, so both rendered, unstyled, at every viewport width.
+   Found by actually looking at the rendered page, not by inspection. */
+@source "../../src";
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
