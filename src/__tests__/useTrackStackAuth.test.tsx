@@ -210,6 +210,32 @@ describe("useTrackStackAuth", () => {
     window.location = originalLocation;
   });
 
+  it("loginWithGoogle() defaults returnTo to origin + pathname, not just origin", async () => {
+    // Regression test for a real bug (2026-09-12): with every TrackStack
+    // app potentially living behind trackstack-gateway on one shared
+    // origin (gateway/nutrition, gateway/finance), an origin-only
+    // default silently drops which app the user was on, so
+    // trackstack-auth's /google/callback redirect landed on the
+    // gateway's bare root instead of back on the caller.
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { url: "https://accounts.google.com/redirect" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const originalLocation = window.location;
+    // @ts-expect-error -- see above.
+    delete window.location;
+    // @ts-expect-error -- see above.
+    window.location = { ...originalLocation, origin: "https://gateway.example", pathname: "/nutrition", href: "" };
+
+    const { result } = renderHook(() => useTrackStackAuth({ authBaseUrl: "https://auth.example" }));
+    await act(async () => {
+      await result.current.loginWithGoogle();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://auth.example/google?returnTo=https%3A%2F%2Fgateway.example%2Fnutrition");
+
+    // @ts-expect-error -- see above.
+    window.location = originalLocation;
+  });
+
   it("loginWithGoogle() throws when the server doesn't return a url", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(500, { error: "Google OAuth not configured" })));
 

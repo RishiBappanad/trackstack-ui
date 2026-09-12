@@ -144,7 +144,16 @@ export function useTrackStackAuth(
 
   const loginWithGoogle = useCallback(
     async (returnTo?: string) => {
-      const target = returnTo ?? (typeof window === "undefined" ? "" : window.location.origin);
+      // Defaults to origin + pathname, not just origin -- with every
+      // TrackStack app now potentially living behind trackstack-gateway
+      // on one shared origin (e.g. gateway/nutrition, gateway/finance),
+      // an origin-only default silently drops which app the user was
+      // actually on, so trackstack-auth's /google/callback redirect
+      // lands on the gateway's bare root instead of back on the caller.
+      // Real bug, not hypothetical: nutrition-insights and finance-tracker
+      // both explicitly passed window.location.origin at their own call
+      // sites before this fix (2026-09-12) and hit exactly this.
+      const target = returnTo ?? (typeof window === "undefined" ? "" : window.location.origin + window.location.pathname);
       const res = await fetch(`${authBaseUrl}/google?returnTo=${encodeURIComponent(target)}`);
       const data = await res.json();
       if (!data.url) throw new Error(data.error || "Google login unavailable");

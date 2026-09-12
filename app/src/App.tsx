@@ -8,6 +8,28 @@ import { Tokens } from "./pages/Tokens.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
+// Extract the trackstack-auth token from the URL hash BEFORE
+// useTrackStackAuth reads localStorage -- runs synchronously at module
+// load time, same pattern nutrition-insights/finance-tracker's own
+// App files already use. trackstack-auth's /google/callback redirects
+// with #trackstack_token=... (see trackstack-auth/src/routes.ts). This
+// was missing entirely here (home's App.tsx was written from scratch
+// this session rather than ported from either existing app), which
+// combined with a second bug in nutrition/finance's own Google-login
+// call sites (passing window.location.origin, losing their own
+// /nutrition or /finance path now that the gateway puts every tracker
+// on one shared origin) meant a Google login from ANY tracker landed
+// back on this page with a token in the hash that nothing ever read --
+// "Google OAuth isn't working" for the whole site, found 2026-09-12.
+(function extractGoogleToken() {
+  const hash = window.location.hash;
+  const match = hash.match(/trackstack_token=([^&]+)/);
+  if (match) {
+    localStorage.setItem("token", match[1]);
+    window.location.hash = "";
+  }
+})();
+
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const [location] = useLocation();
   const active = location === href;
