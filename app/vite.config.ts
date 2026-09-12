@@ -11,8 +11,29 @@ import tailwindcss from "@tailwindcss/vite";
 // session hit repeatedly with nutrition-insights/finance-tracker's OWN
 // trackstack-ui dependency doesn't apply here, since there's no
 // published-package indirection to go stale in the first place.
+//
+// Consequence: whatever ../src itself imports at runtime (clsx,
+// tailwind-merge, lucide-react) must be resolvable from ../src's own
+// location -- Vite/Rollup resolves each file's imports via standard
+// Node resolution rooted at THAT file, which walks up from
+// trackstack-ui/src through trackstack-ui/ itself, never sideways into
+// app/node_modules no matter what app/package.json declares. The real
+// fix is installing trackstack-ui's own root package.json (its
+// dependencies already list all three), not duplicating them into
+// app/package.json -- a Dockerfile that only ran `npm ci` inside app/
+// looked like it needed that duplication, until testing in a genuinely
+// clean container (no root node_modules already sitting there, unlike
+// local dev) showed it still failed on lucide-react even with it
+// "fixed" for clsx/tailwind-merge -- see app/Dockerfile's root install
+// step. Found 2026-09-12.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Same VITE_BASE_PATH convention nutrition-insights/finance-tracker's
+  // own Vite configs already use for gateway/proxy-mode builds (e.g.
+  // `--build-arg BASE_PATH=/nutrition/`) -- this app is the "/" catch-all
+  // rather than a sub-path, so it should rarely need this overridden,
+  // but keeping the same knob avoids a special case.
+  base: process.env.VITE_BASE_PATH || "/",
   server: { host: true },
   resolve: {
     alias: {

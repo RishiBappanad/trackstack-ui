@@ -1,0 +1,65 @@
+name: Deploy home page to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: deploy-group
+
+permissions:
+  contents: read
+  id-token: write # required for Workload Identity Federation
+
+env:
+  PROJECT_ID: trackstack-501915
+  REGION: us-east1
+  SERVICE: trackstack-home
+  IMAGE: us-east1-docker.pkg.dev/trackstack-501915/cloud-run-source-deploy/trackstack-home:latest
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/824912246889/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
+          service_account: github-actions-deployer@trackstack-501915.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        # Build context is the repo ROOT, not app/ -- app/ imports this
+        # library's own source directly from ../src (see app/vite.config.ts),
+        # so both directories need to be present at their real relative
+        # paths inside the build (see app/Dockerfile's own comment).
+        #
+        # home is always served at "/" (the gateway's catch-all, never a
+        # sub-path -- see trackstack-gateway's routes.ts), so BASE_PATH
+        # never needs to change; TRACKSTACK_AUTH_URL/TODO_API_BASE are
+        # gateway-relative paths since the gateway is the only origin
+        # this service is meant to be reached through.
+        run: |
+          docker build -f app/Dockerfile \
+            --build-arg BASE_PATH=/ \
+            --build-arg TRACKSTACK_AUTH_URL=/auth \
+            --build-arg TODO_API_BASE=/todo \
+            -t "${{ env.IMAGE }}" .
+
+      - name: Push image
+        run: docker push "${{ env.IMAGE }}"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${{ env.SERVICE }}" \
+            --image="${{ env.IMAGE }}" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --allow-unauthenticated
