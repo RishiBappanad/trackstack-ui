@@ -54,6 +54,7 @@
   --color-switcher-foreground: hsl(var(--switcher-foreground));
   --color-switcher-border: hsl(var(--switcher-border));
   --color-switcher-active: hsl(var(--switcher-active));
+  --color-switcher-active-foreground: hsl(var(--switcher-active-foreground));
 
   --font-sans: var(--app-font-sans);
   --font-mono: var(--app-font-mono);
@@ -104,6 +105,7 @@
   --switcher-foreground: 250 12% 60%;
   --switcher-border: 250 22% 11%;
   --switcher-active: 258 55% 20%;
+  --switcher-active-foreground: 258 80% 88%;
 
   --app-font-sans: 'Plus Jakarta Sans', sans-serif;
   --app-font-mono: 'JetBrains Mono', monospace;

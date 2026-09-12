@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Apple, LayoutDashboard, Wallet } from "lucide-react";
+import { Apple, Home, LayoutDashboard, Wallet } from "lucide-react";
 import { cn } from "../lib/cn.js";
 import { useAppRegistry } from "../hooks/useAppRegistry.js";
 
@@ -14,16 +14,30 @@ import { useAppRegistry } from "../hooks/useAppRegistry.js";
  *
  * Styling contract: renders Tailwind utility classes against a
  * `switcher-*` CSS custom-property family (bg-switcher,
- * border-switcher-border, bg-switcher-active, text-switcher-foreground)
- * plus `ring-sidebar-ring` for the active-item ring. A consuming app's
- * Tailwind theme must define these -- nutrition-insights already does;
- * see its theme file for real values to copy when adopting this
- * component elsewhere.
+ * border-switcher-border, bg-switcher-active, text-switcher-foreground,
+ * text-switcher-active-foreground) plus `ring-sidebar-ring` for the
+ * active-item ring. A consuming app's Tailwind theme must define these
+ * -- nutrition-insights already does; see its theme file for real
+ * values to copy when adopting this component elsewhere.
+ *
+ * `switcher-active-foreground` specifically (added 2026-09-12) must be
+ * chosen to contrast against `switcher-active`, NOT reused from
+ * `primary-foreground` -- that token is designed to pair with `primary`,
+ * an unrelated color. This was a real, live bug: finance-tracker's dark
+ * theme has `primary-foreground` sitting near-black specifically to sit
+ * on top of a light `primary` button, which happens to also be nearly
+ * the same darkness as `switcher-active` there, making finance's OWN
+ * icon effectively invisible on finance-tracker's own page (visible
+ * fine from every other app, since there it's never the active one).
+ * nutrition-insights never hit this only because its `primary-foreground`
+ * happens to be pure white, which coincidentally contrasts against
+ * almost anything.
  */
 const DEFAULT_ICON_MAP: Record<string, LucideIcon> = {
   Wallet,
   Apple,
   LayoutDashboard,
+  Home,
 };
 
 export interface AppSwitcherProps {
@@ -58,7 +72,7 @@ export function AppSwitcher(props: AppSwitcherProps) {
             className={cn(
               "w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200",
               isActive
-                ? "bg-switcher-active text-primary-foreground ring-2 ring-sidebar-ring"
+                ? "bg-switcher-active text-switcher-active-foreground ring-2 ring-sidebar-ring"
                 : "text-switcher-foreground hover:bg-switcher-active/50 hover:text-sidebar-foreground"
             )}
           >
@@ -87,7 +101,7 @@ export function MobileAppSwitcher(props: AppSwitcherProps) {
             className={cn(
               "w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200",
               isActive
-                ? "bg-switcher-active text-primary-foreground ring-1 ring-sidebar-ring"
+                ? "bg-switcher-active text-switcher-active-foreground ring-1 ring-sidebar-ring"
                 : "text-switcher-foreground hover:bg-switcher-active/50"
             )}
           >

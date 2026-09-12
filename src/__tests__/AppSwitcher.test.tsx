@@ -39,6 +39,19 @@ describe("AppSwitcher", () => {
     expect(nutritionLink).toHaveAttribute("href", "https://nutrition.example.com");
   });
 
+  it("styles the active item against switcher-active-foreground, not primary-foreground", async () => {
+    // Regression test for a real bug (2026-09-12): finance-tracker's dark
+    // theme has primary-foreground sitting near-black to pair with a
+    // light `primary` button -- reusing it here made the active icon
+    // nearly invisible against switcher-active, which happens to be a
+    // similarly dark color there. switcher-active-foreground is its own
+    // token specifically so each app can contrast it correctly.
+    render(<AppSwitcher authBaseUrl="https://auth.example.com" currentAppId="finance" />);
+    const financeLink = await screen.findByTitle("Finance Tracker");
+    expect(financeLink.className).toContain("text-switcher-active-foreground");
+    expect(financeLink.className).not.toContain("text-primary-foreground");
+  });
+
   it("renders nothing before the registry has loaded", () => {
     // A fetch that never resolves within this test -- isolates the
     // synchronous initial-render check from the mocked fetch's
