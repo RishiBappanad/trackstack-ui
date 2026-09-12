@@ -12,6 +12,7 @@ export { useTrackStackAuth } from "./hooks/useTrackStackAuth.js";
 export type {
   UseTrackStackAuthOptions,
   UseTrackStackAuthResult,
+  TrackStackAuthResponse,
 } from "./hooks/useTrackStackAuth.js";
 export { useCurrentUser } from "./hooks/useCurrentUser.js";
 export type { UseCurrentUserResult } from "./hooks/useCurrentUser.js";
