@@ -36,6 +36,23 @@ function todoToFormValues(t: Todo): TodoFormValues {
   };
 }
 
+// due_at is a calendar date, not a moment in time -- there's no "time of
+// day" a todo is due. Treating it as one (running it through `new Date()`
+// and letting the browser's local timezone reinterpret it) is exactly
+// what caused a real, confirmed bug: saving "2026-12-25" from the date
+// picker round-tripped through `new Date("2026-12-25").toISOString()`
+// (parsed as UTC midnight) and back through `.toLocaleDateString()`
+// (rendered in local time), which showed "12/24/2026" for anyone west of
+// UTC. Both directions below work on the YYYY-MM-DD string directly and
+// never construct a Date object from it, so no timezone is ever involved.
+function dateInputValueToDueAt(value: string): string {
+  return `${value}T00:00:00.000Z`;
+}
+function formatDueAt(due_at: string): string {
+  const [y, m, d] = due_at.slice(0, 10).split("-");
+  return `${m}/${d}/${y}`;
+}
+
 const EMPTY_FORM: TodoFormValues = { title: "", category: "personal", priority: 1, dueAt: "", notes: "" };
 
 /**
@@ -126,10 +143,14 @@ function TodoForm({
 export function Todos() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const [todos, setTodos] = useState<Todo[]>([]);
-  const [filter, setFilter] = useState<"" | "open" | "done">("");
+  // "Open" is the default and leftmost tab so completed items don't
+  // clutter the list by default; "All" (still everything, done included)
+  // and "Done" remain one click away.
+  const [filter, setFilter] = useState<"open" | "" | "done">("open");
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [priorityFilter, setPriorityFilter] = useState<string>("");
+  const [categoryFilters, setCategoryFilters] = useState<Set<string>>(new Set());
+  const [priorityMin, setPriorityMin] = useState("");
+  const [priorityMax, setPriorityMax] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
 
@@ -157,7 +178,7 @@ export function Todos() {
       title: v.title,
       category: v.category,
       priority: v.priority,
-      due_at: v.dueAt ? new Date(v.dueAt).toISOString() : null,
+      due_at: v.dueAt ? dateInputValueToDueAt(v.dueAt) : null,
       notes: v.notes ? v.notes : null,
     };
   }
@@ -202,16 +223,27 @@ export function Todos() {
     }
   }
 
+  function toggleCategoryFilter(c: string) {
+    setCategoryFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) next.delete(c);
+      else next.add(c);
+      return next;
+    });
+  }
+
   // Client-side filters -- on top of the status filter above, which is
   // already a real query param the backend applies (GET /todos?status=).
   // Search/category/priority filter the already-fetched list instead of
   // adding more query params: a personal todo list is small enough that
   // there's no real cost to filtering client-side, and it avoids growing
   // the API surface for something this list can already do locally.
+  const min = priorityMin ? Number(priorityMin) : -Infinity;
+  const max = priorityMax ? Number(priorityMax) : Infinity;
   const visibleTodos = todos.filter((t) => {
     if (search.trim() && !t.title.toLowerCase().includes(search.trim().toLowerCase())) return false;
-    if (categoryFilter && t.category !== categoryFilter) return false;
-    if (priorityFilter && t.priority !== Number(priorityFilter)) return false;
+    if (categoryFilters.size > 0 && !categoryFilters.has(t.category)) return false;
+    if (t.priority < min || t.priority > max) return false;
     return true;
   });
 
@@ -227,8 +259,8 @@ export function Todos() {
 
       <TodoForm submitLabel="Add" onSubmit={createTodo} />
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {(["", "open", "done"] as const).map((f) => (
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {(["open", "", "done"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -246,27 +278,50 @@ export function Todos() {
           placeholder="Search by name..."
           className="flex-1 min-w-[140px] bg-secondary border border-border rounded-md px-3 py-1.5 text-sm"
         />
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="bg-secondary border border-border rounded-md px-2 py-1.5 text-sm"
-        >
-          <option value="">All categories</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <input
-          type="number"
-          min={1}
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          placeholder="Priority"
-          className="w-20 bg-secondary border border-border rounded-md px-2 py-1.5 text-sm"
-          title="Filter by exact priority"
-        />
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+          <input
+            type="number"
+            min={1}
+            value={priorityMin}
+            onChange={(e) => setPriorityMin(e.target.value)}
+            placeholder="Min"
+            title="Minimum priority"
+            className="w-16 bg-secondary border border-border rounded-md px-2 py-1.5 text-sm"
+          />
+          <span>–</span>
+          <input
+            type="number"
+            min={1}
+            value={priorityMax}
+            onChange={(e) => setPriorityMax(e.target.value)}
+            placeholder="Max"
+            title="Maximum priority"
+            className="w-16 bg-secondary border border-border rounded-md px-2 py-1.5 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 mb-4">
+        <span className="text-xs text-muted-foreground mr-1">Categories:</span>
+        {CATEGORIES.map((c) => (
+          <button
+            key={c}
+            onClick={() => toggleCategoryFilter(c)}
+            className={
+              "capitalize px-2.5 py-1 rounded-full text-xs border " +
+              (categoryFilters.has(c)
+                ? "bg-secondary border-secondary text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground")
+            }
+          >
+            {c}
+          </button>
+        ))}
+        {categoryFilters.size > 0 && (
+          <button onClick={() => setCategoryFilters(new Set())} className="text-xs text-muted-foreground hover:text-foreground underline ml-1">
+            Clear
+          </button>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-lg divide-y divide-border">
@@ -297,7 +352,7 @@ export function Todos() {
                 <div className="text-xs text-muted-foreground flex gap-2 mt-0.5">
                   <span className="capitalize">{t.category}</span>
                   <span>· P{t.priority}</span>
-                  {t.due_at && <span>· due {new Date(t.due_at).toLocaleDateString()}</span>}
+                  {t.due_at && <span>· due {formatDueAt(t.due_at)}</span>}
                 </div>
                 {t.notes && <div className="text-xs text-muted-foreground mt-1">{t.notes}</div>}
               </div>
