@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Apple, Home, LayoutDashboard, Wallet } from "lucide-react";
+import { Apple, Home, LayoutDashboard, ListTodo, Wallet } from "lucide-react";
 import { cn } from "../lib/cn.js";
 import { useAppRegistry } from "../hooks/useAppRegistry.js";
 
@@ -38,6 +38,7 @@ const DEFAULT_ICON_MAP: Record<string, LucideIcon> = {
   Apple,
   LayoutDashboard,
   Home,
+  ListTodo,
 };
 
 export interface AppSwitcherProps {
