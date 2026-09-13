@@ -62,26 +62,50 @@ const EMPTY_FORM: TodoFormValues = { title: "", category: "personal", priority: 
  * JSX, which is exactly how the create form silently ended up missing
  * fields (due date, notes) that the edit form gained later.
  */
+const NEW_CATEGORY_SENTINEL = "__new_category__";
+
 function TodoForm({
   initial,
   categories,
   submitLabel,
   onSubmit,
   onCancel,
+  onAddCategory,
 }: {
   initial?: TodoFormValues;
   categories: string[];
   submitLabel: string;
   onSubmit: (values: TodoFormValues) => Promise<void>;
   onCancel?: () => void;
+  onAddCategory: (name: string) => Promise<void>;
 }) {
   const [values, setValues] = useState<TodoFormValues>(initial ?? EMPTY_FORM);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!values.title.trim()) return;
     await onSubmit({ ...values, title: values.title.trim(), notes: values.notes.trim() });
     if (!initial) setValues(EMPTY_FORM); // create mode: clear the form after a successful add
+  }
+
+  async function confirmNewCategory() {
+    const name = newCategoryName.trim();
+    if (!name) {
+      setAddingCategory(false);
+      return;
+    }
+    try {
+      await onAddCategory(name);
+      setValues((v) => ({ ...v, category: name }));
+      setAddingCategory(false);
+      setNewCategoryName("");
+      setCategoryError(null);
+    } catch (err) {
+      setCategoryError(err instanceof ApiError ? err.message : "Could not add category");
+    }
   }
 
   return (
@@ -98,17 +122,54 @@ function TodoForm({
         autoFocus={!!onCancel}
         className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
       />
-      <select
-        value={values.category}
-        onChange={(e) => setValues({ ...values, category: e.target.value })}
-        className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-      >
-        {categories.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>
+      {addingCategory ? (
+        <div className="flex items-center gap-1">
+          <input
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                confirmNewCategory();
+              }
+            }}
+            placeholder="New category name"
+            autoFocus
+            className="bg-secondary border border-border rounded-md px-2 py-2 text-sm w-36"
+          />
+          <button type="button" onClick={confirmNewCategory} className="bg-primary text-primary-foreground rounded-md px-2 py-2 text-sm">
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAddingCategory(false);
+              setNewCategoryName("");
+              setCategoryError(null);
+            }}
+            className="text-muted-foreground hover:text-foreground rounded-md px-1 py-2"
+            aria-label="Cancel new category"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        <select
+          value={values.category}
+          onChange={(e) => {
+            if (e.target.value === NEW_CATEGORY_SENTINEL) setAddingCategory(true);
+            else setValues({ ...values, category: e.target.value });
+          }}
+          className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
+        >
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+          <option value={NEW_CATEGORY_SENTINEL}>+ New category...</option>
+        </select>
+      )}
       <input
         type="number"
         min={1}
@@ -138,6 +199,7 @@ function TodoForm({
           <X className="h-4 w-4" />
         </button>
       )}
+      {categoryError && <div className="w-full text-xs text-destructive">{categoryError}</div>}
     </form>
   );
 }
@@ -147,38 +209,21 @@ function TodoForm({
  * inside a native <details> dropdown (no click-outside handling needed:
  * <details> already toggles via its own <summary>) instead of a row of
  * pills, so a user with many custom categories isn't confronted with all
- * of them at once. Also where new custom categories get created, since
- * this is the one place both filtering and category management live.
+ * of them at once. Pure filtering only -- category creation lives in
+ * TodoForm instead (a user wants to make a new category while making a
+ * task, not while searching/filtering an existing list).
  */
 function CategoryFilterDropdown({
   allCategories,
   selected,
   onToggle,
   onClear,
-  onAddCategory,
 }: {
   allCategories: string[];
   selected: Set<string>;
   onToggle: (c: string) => void;
   onClear: () => void;
-  onAddCategory: (name: string) => Promise<void>;
 }) {
-  const [newCategory, setNewCategory] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    const name = newCategory.trim();
-    if (!name) return;
-    try {
-      await onAddCategory(name);
-      setNewCategory("");
-      setAddError(null);
-    } catch (err) {
-      setAddError(err instanceof ApiError ? err.message : "Could not add category");
-    }
-  }
-
   return (
     <details className="relative">
       <summary className="list-none cursor-pointer bg-secondary border border-border rounded-md px-3 py-1.5 text-sm select-none">
@@ -198,18 +243,6 @@ function CategoryFilterDropdown({
             Clear selection
           </button>
         )}
-        <form onSubmit={handleAdd} className="flex gap-1 mt-2 pt-2 border-t border-border">
-          <input
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-            placeholder="New category..."
-            className="flex-1 min-w-0 bg-secondary border border-border rounded-md px-2 py-1 text-xs"
-          />
-          <button type="submit" className="bg-primary text-primary-foreground rounded-md px-2 py-1 text-xs font-medium">
-            Add
-          </button>
-        </form>
-        {addError && <div className="text-xs text-destructive mt-1">{addError}</div>}
       </div>
     </details>
   );
@@ -357,7 +390,7 @@ export function Todos() {
         </div>
       )}
 
-      <TodoForm categories={allCategories} submitLabel="Add" onSubmit={createTodo} />
+      <TodoForm categories={allCategories} submitLabel="Add" onSubmit={createTodo} onAddCategory={addCategory} />
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {(["open", "", "done"] as const).map((f) => (
@@ -383,7 +416,6 @@ export function Todos() {
           selected={categoryFilters}
           onToggle={toggleCategoryFilter}
           onClear={() => setCategoryFilters(new Set())}
-          onAddCategory={addCategory}
         />
         <div className="flex items-center gap-1 text-sm text-muted-foreground">
           <input
@@ -418,6 +450,7 @@ export function Todos() {
               categories={allCategories}
               submitLabel="Save"
               onCancel={() => setEditingId(null)}
+              onAddCategory={addCategory}
               onSubmit={(values) => saveEdit(t.id, values)}
             />
           ) : (
