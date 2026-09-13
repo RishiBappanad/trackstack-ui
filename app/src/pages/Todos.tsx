@@ -18,21 +18,120 @@ interface Todo {
   due_at: string | null;
 }
 
+interface TodoFormValues {
+  title: string;
+  category: string;
+  priority: number;
+  dueAt: string; // "" or a <input type=date> value (YYYY-MM-DD)
+  notes: string;
+}
+
+function todoToFormValues(t: Todo): TodoFormValues {
+  return {
+    title: t.title,
+    category: t.category,
+    priority: t.priority,
+    dueAt: t.due_at ? t.due_at.slice(0, 10) : "",
+    notes: t.notes ?? "",
+  };
+}
+
+const EMPTY_FORM: TodoFormValues = { title: "", category: "personal", priority: 1, dueAt: "", notes: "" };
+
+/**
+ * One shared form for both creating a todo (no `initial`/`onCancel`) and
+ * editing one in place (both provided) -- previously these were two
+ * separately hand-maintained forms with their own duplicated state and
+ * JSX, which is exactly how the create form silently ended up missing
+ * fields (due date, notes) that the edit form gained later.
+ */
+function TodoForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  initial?: TodoFormValues;
+  submitLabel: string;
+  onSubmit: (values: TodoFormValues) => Promise<void>;
+  onCancel?: () => void;
+}) {
+  const [values, setValues] = useState<TodoFormValues>(initial ?? EMPTY_FORM);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!values.title.trim()) return;
+    await onSubmit({ ...values, title: values.title.trim(), notes: values.notes.trim() });
+    if (!initial) setValues(EMPTY_FORM); // create mode: clear the form after a successful add
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className={
+        onCancel ? "flex flex-wrap items-start gap-2 px-4 py-3" : "flex flex-wrap gap-2 mb-6 bg-card border border-border rounded-lg p-4"
+      }
+    >
+      <input
+        value={values.title}
+        onChange={(e) => setValues({ ...values, title: e.target.value })}
+        placeholder="What needs doing?"
+        autoFocus={!!onCancel}
+        className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
+      />
+      <select
+        value={values.category}
+        onChange={(e) => setValues({ ...values, category: e.target.value })}
+        className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
+      >
+        {CATEGORIES.map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </select>
+      <input
+        type="number"
+        min={1}
+        value={values.priority}
+        onChange={(e) => setValues({ ...values, priority: Number(e.target.value) || 1 })}
+        className="w-16 bg-secondary border border-border rounded-md px-2 py-2 text-sm"
+        title="Priority"
+      />
+      <input
+        type="date"
+        value={values.dueAt}
+        onChange={(e) => setValues({ ...values, dueAt: e.target.value })}
+        className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
+        title="Due date"
+      />
+      <input
+        value={values.notes}
+        onChange={(e) => setValues({ ...values, notes: e.target.value })}
+        placeholder="Notes (optional)"
+        className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
+      />
+      <button type="submit" className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium">
+        {submitLabel}
+      </button>
+      {onCancel && (
+        <button type="button" onClick={onCancel} className="text-muted-foreground hover:text-foreground rounded-md px-2 py-2" aria-label="Cancel edit">
+          <X className="h-4 w-4" />
+        </button>
+      )}
+    </form>
+  );
+}
+
 export function Todos() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const [todos, setTodos] = useState<Todo[]>([]);
   const [filter, setFilter] = useState<"" | "open" | "done">("");
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [priorityFilter, setPriorityFilter] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<string>("personal");
-  const [priority, setPriority] = useState(1);
-
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editCategory, setEditCategory] = useState<string>("personal");
-  const [editPriority, setEditPriority] = useState(1);
-  const [editNotes, setEditNotes] = useState("");
-  const [editDueAt, setEditDueAt] = useState("");
 
   const load = useCallback(async () => {
     if (!TODO_BASE_URL) {
@@ -53,19 +152,32 @@ export function Todos() {
     load();
   }, [load]);
 
-  async function createTodo(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim()) return;
+  function todoRequestBody(v: TodoFormValues) {
+    return {
+      title: v.title,
+      category: v.category,
+      priority: v.priority,
+      due_at: v.dueAt ? new Date(v.dueAt).toISOString() : null,
+      notes: v.notes ? v.notes : null,
+    };
+  }
+
+  async function createTodo(values: TodoFormValues) {
     try {
-      await apiFetch(TODO_BASE_URL, "/todos", token, {
-        method: "POST",
-        body: JSON.stringify({ title: title.trim(), category, priority }),
-      });
-      setTitle("");
-      setPriority(1);
+      await apiFetch(TODO_BASE_URL, "/todos", token, { method: "POST", body: JSON.stringify(todoRequestBody(values)) });
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not create todo");
+    }
+  }
+
+  async function saveEdit(id: number, values: TodoFormValues) {
+    try {
+      await apiFetch(TODO_BASE_URL, `/todos/${id}`, token, { method: "PATCH", body: JSON.stringify(todoRequestBody(values)) });
+      setEditingId(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not update todo");
     }
   }
 
@@ -90,39 +202,18 @@ export function Todos() {
     }
   }
 
-  function startEdit(t: Todo) {
-    setEditingId(t.id);
-    setEditTitle(t.title);
-    setEditCategory(t.category);
-    setEditPriority(t.priority);
-    setEditNotes(t.notes ?? "");
-    setEditDueAt(t.due_at ? t.due_at.slice(0, 10) : "");
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-  }
-
-  async function saveEdit(id: number, e: React.FormEvent) {
-    e.preventDefault();
-    if (!editTitle.trim()) return;
-    try {
-      await apiFetch(TODO_BASE_URL, `/todos/${id}`, token, {
-        method: "PATCH",
-        body: JSON.stringify({
-          title: editTitle.trim(),
-          category: editCategory,
-          priority: editPriority,
-          notes: editNotes.trim() ? editNotes.trim() : null,
-          due_at: editDueAt ? new Date(editDueAt).toISOString() : null,
-        }),
-      });
-      setEditingId(null);
-      await load();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not update todo");
-    }
-  }
+  // Client-side filters -- on top of the status filter above, which is
+  // already a real query param the backend applies (GET /todos?status=).
+  // Search/category/priority filter the already-fetched list instead of
+  // adding more query params: a personal todo list is small enough that
+  // there's no real cost to filtering client-side, and it avoids growing
+  // the API surface for something this list can already do locally.
+  const visibleTodos = todos.filter((t) => {
+    if (search.trim() && !t.title.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    if (categoryFilter && t.category !== categoryFilter) return false;
+    if (priorityFilter && t.priority !== Number(priorityFilter)) return false;
+    return true;
+  });
 
   return (
     <div className="max-w-2xl">
@@ -134,38 +225,9 @@ export function Todos() {
         </div>
       )}
 
-      <form onSubmit={createTodo} className="flex flex-wrap gap-2 mb-6 bg-card border border-border rounded-lg p-4">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="What needs doing?"
-          className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
-        />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-        >
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <input
-          type="number"
-          min={1}
-          value={priority}
-          onChange={(e) => setPriority(Number(e.target.value) || 1)}
-          className="w-16 bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-          title="Priority"
-        />
-        <button type="submit" className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium">
-          Add
-        </button>
-      </form>
+      <TodoForm submitLabel="Add" onSubmit={createTodo} />
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {(["", "open", "done"] as const).map((f) => (
           <button
             key={f}
@@ -178,64 +240,46 @@ export function Todos() {
             {f === "" ? "All" : f === "open" ? "Open" : "Done"}
           </button>
         ))}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name..."
+          className="flex-1 min-w-[140px] bg-secondary border border-border rounded-md px-3 py-1.5 text-sm"
+        />
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="bg-secondary border border-border rounded-md px-2 py-1.5 text-sm"
+        >
+          <option value="">All categories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={1}
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value)}
+          placeholder="Priority"
+          className="w-20 bg-secondary border border-border rounded-md px-2 py-1.5 text-sm"
+          title="Filter by exact priority"
+        />
       </div>
 
       <div className="bg-card border border-border rounded-lg divide-y divide-border">
-        {todos.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">No todos here.</p>}
-        {todos.map((t) =>
+        {visibleTodos.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">No todos here.</p>}
+        {visibleTodos.map((t) =>
           editingId === t.id ? (
-            <form key={t.id} onSubmit={(e) => saveEdit(t.id, e)} className="flex flex-wrap items-start gap-2 px-4 py-3">
-              <input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="What needs doing?"
-                autoFocus
-                className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
-              />
-              <select
-                value={editCategory}
-                onChange={(e) => setEditCategory(e.target.value)}
-                className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min={1}
-                value={editPriority}
-                onChange={(e) => setEditPriority(Number(e.target.value) || 1)}
-                className="w-16 bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-                title="Priority"
-              />
-              <input
-                type="date"
-                value={editDueAt}
-                onChange={(e) => setEditDueAt(e.target.value)}
-                className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-                title="Due date"
-              />
-              <input
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
-                placeholder="Notes (optional)"
-                className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
-              />
-              <button type="submit" className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium">
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={cancelEdit}
-                className="text-muted-foreground hover:text-foreground rounded-md px-2 py-2"
-                aria-label="Cancel edit"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </form>
+            <TodoForm
+              key={t.id}
+              initial={todoToFormValues(t)}
+              submitLabel="Save"
+              onCancel={() => setEditingId(null)}
+              onSubmit={(values) => saveEdit(t.id, values)}
+            />
           ) : (
             <div key={t.id} className="flex items-center gap-3 px-4 py-3">
               <button
@@ -258,7 +302,7 @@ export function Todos() {
                 {t.notes && <div className="text-xs text-muted-foreground mt-1">{t.notes}</div>}
               </div>
               <button
-                onClick={() => startEdit(t)}
+                onClick={() => setEditingId(t.id)}
                 className="text-muted-foreground hover:text-foreground flex-shrink-0"
                 aria-label="Edit"
               >
