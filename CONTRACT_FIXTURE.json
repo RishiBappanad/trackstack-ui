@@ -1,0 +1,22 @@
+{
+  "$comment": "Shared behavioral contract for every trackstack-auth-client implementation (this Python package, and trackstack-ui's Node /auth-client subpath). Each implementation's own test suite loads this file and asserts identical behavior against it, so the two can't silently drift the way finance-tracker and nutrition-insights's hand-copied PAT fallbacks did before either had one at all. Keep this file byte-identical across both repos -- if the fixture ever needs to change, update it in both places in the same commit/session.",
+  "jwtSecret": "test-secret-do-not-use-in-production-32chars",
+  "jwtAlgorithm": "HS256",
+  "validJwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2NvdW50SWQiOjQyLCJlbWFpbCI6ImZpeHR1cmVAZXhhbXBsZS5jb20iLCJpYXQiOjE3ODkzNTQxMzF9.uH_zloX2aoy1YrJIl8Or2YBLZx-aBXClMIOwkW9mlr4",
+  "expectedFromValidJwt": { "accountId": 42, "email": "fixture@example.com" },
+  "malformedToken": "not-a-real-token-at-all",
+  "patToken": "tsk_fixture_pat_token_for_contract_tests",
+  "trackstackAuthUrl": "http://trackstack-auth.invalid",
+  "patVerifyRequest": { "token": "tsk_fixture_pat_token_for_contract_tests" },
+  "patVerifyResponseBody": { "account": { "accountId": 99, "email": "pat-fixture@example.com" } },
+  "expectedFromPat": { "accountId": 99, "email": "pat-fixture@example.com" },
+  "revokedPatToken": "tsk_fixture_revoked_pat_token",
+
+  "$behavior": [
+    "Given validJwt: verify locally against jwtSecret/jwtAlgorithm, return expectedFromValidJwt. Must NOT call trackstackAuthUrl at all for this case.",
+    "Given malformedToken with no trackstackAuthUrl configured: return null without attempting any network call.",
+    "Given patToken (not a valid JWT) with trackstackAuthUrl configured: local JWT verification fails, then POST {trackstackAuthUrl}/tokens/verify with body patVerifyRequest; a mocked 200 response with patVerifyResponseBody must yield expectedFromPat.",
+    "Given revokedPatToken with trackstackAuthUrl configured: local JWT verification fails, then POST /tokens/verify; a mocked non-2xx (e.g. 401) response must yield null, not throw.",
+    "Given trackstackAuthUrl unreachable (connection error) on the PAT fallback path: return null, not throw or crash the caller's request."
+  ]
+}

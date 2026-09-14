@@ -1,6 +1,6 @@
 {
   "name": "trackstack-ui",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Shared React component library for TrackStack apps",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./auth-client": {
+      "types": "./dist/auth-client.d.ts",
+      "import": "./dist/auth-client.js",
+      "require": "./dist/auth-client.cjs"
     }
   },
   "files": [
@@ -24,18 +29,28 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
+    "react-dom": ">=18.0.0",
+    "express": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-dom": { "optional": true },
+    "express": { "optional": true }
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.468.0",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "express": "^4.21.2",
     "jsdom": "^25.0.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",

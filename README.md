@@ -35,6 +35,40 @@ and chart) are also not built yet — deferred until a second real
 tracker's shape clarifies what's actually generic about them, rather
 than guessing from nutrition-insights' shape alone.
 
+## `trackstack-ui/auth-client` — backend auth, not a React import
+
+A separate subpath, not re-exported from the main `trackstack-ui`
+import: shared JWT-then-personal-access-token verification for a
+tracker's own **backend** (Node/Express), extracted after this exact
+fallback logic was found to be silently missing in two of three
+trackers despite being documented as universal. Has no dependency on
+React — `react`/`react-dom` are `optional` peer dependencies, so a
+backend service can `npm install trackstack-ui` for just this without
+ever installing React.
+
+```ts
+import { createRequireAuth } from "trackstack-ui/auth-client";
+
+const requireAuth = createRequireAuth({
+  jwtSecret: process.env.JWT_SECRET!,
+  trackstackAuthUrl: process.env.TRACKSTACK_AUTH_URL, // omit to disable PAT support
+  onAuthenticated: async (account) => ensureLocalUser(account),
+});
+
+app.get("/todos", requireAuth, (req, res) => { /* req.account.accountId */ });
+```
+
+The lower-level `verifyTrackstackToken(token, opts)` is also exported
+directly, for a framework other than Express, or a tracker that needs
+to rename the request property this attaches to (see the doc comment on
+`createRequireAuth` for how to wrap it).
+
+The Python equivalent lives in the
+[`trackstack-auth-client`](https://github.com/RishiBappanad/trackstack-auth-client)
+PyPI package. Both are tested against the same `CONTRACT_FIXTURE.json`
+at this repo's root, so they can't silently drift apart the way the two
+hand-copied versions already did once.
+
 ## Required host app setup
 
 This library ships **no CSS of its own** — components render Tailwind
