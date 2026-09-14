@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useTrackStackAuth } from "trackstack-ui";
+import { useTrackStackAuth, QualitativeFieldFilter, QualitativeFieldSelect } from "trackstack-ui";
 import { Trash2, Check, Pencil, X } from "lucide-react";
 import { apiFetch, ApiError } from "../lib/api.js";
 
@@ -62,8 +62,6 @@ const EMPTY_FORM: TodoFormValues = { title: "", category: "personal", priority: 
  * JSX, which is exactly how the create form silently ended up missing
  * fields (due date, notes) that the edit form gained later.
  */
-const NEW_CATEGORY_SENTINEL = "__new_category__";
-
 function TodoForm({
   initial,
   categories,
@@ -80,32 +78,12 @@ function TodoForm({
   onAddCategory: (name: string) => Promise<void>;
 }) {
   const [values, setValues] = useState<TodoFormValues>(initial ?? EMPTY_FORM);
-  const [addingCategory, setAddingCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!values.title.trim()) return;
     await onSubmit({ ...values, title: values.title.trim(), notes: values.notes.trim() });
     if (!initial) setValues(EMPTY_FORM); // create mode: clear the form after a successful add
-  }
-
-  async function confirmNewCategory() {
-    const name = newCategoryName.trim();
-    if (!name) {
-      setAddingCategory(false);
-      return;
-    }
-    try {
-      await onAddCategory(name);
-      setValues((v) => ({ ...v, category: name }));
-      setAddingCategory(false);
-      setNewCategoryName("");
-      setCategoryError(null);
-    } catch (err) {
-      setCategoryError(err instanceof ApiError ? err.message : "Could not add category");
-    }
   }
 
   return (
@@ -122,54 +100,13 @@ function TodoForm({
         autoFocus={!!onCancel}
         className="flex-1 min-w-[160px] bg-secondary border border-border rounded-md px-3 py-2 text-sm"
       />
-      {addingCategory ? (
-        <div className="flex items-center gap-1">
-          <input
-            value={newCategoryName}
-            onChange={(e) => setNewCategoryName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                confirmNewCategory();
-              }
-            }}
-            placeholder="New category name"
-            autoFocus
-            className="bg-secondary border border-border rounded-md px-2 py-2 text-sm w-36"
-          />
-          <button type="button" onClick={confirmNewCategory} className="bg-primary text-primary-foreground rounded-md px-2 py-2 text-sm">
-            <Check className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAddingCategory(false);
-              setNewCategoryName("");
-              setCategoryError(null);
-            }}
-            className="text-muted-foreground hover:text-foreground rounded-md px-1 py-2"
-            aria-label="Cancel new category"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
-        <select
-          value={values.category}
-          onChange={(e) => {
-            if (e.target.value === NEW_CATEGORY_SENTINEL) setAddingCategory(true);
-            else setValues({ ...values, category: e.target.value });
-          }}
-          className="bg-secondary border border-border rounded-md px-2 py-2 text-sm"
-        >
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-          <option value={NEW_CATEGORY_SENTINEL}>+ New category...</option>
-        </select>
-      )}
+      <QualitativeFieldSelect
+        value={values.category}
+        options={categories}
+        onChange={(category) => setValues({ ...values, category })}
+        onAddOption={onAddCategory}
+        newOptionLabel="+ New category..."
+      />
       <input
         type="number"
         min={1}
@@ -199,52 +136,7 @@ function TodoForm({
           <X className="h-4 w-4" />
         </button>
       )}
-      {categoryError && <div className="w-full text-xs text-destructive">{categoryError}</div>}
     </form>
-  );
-}
-
-/**
- * Compact multi-select category filter -- a scrollable checkbox list
- * inside a native <details> dropdown (no click-outside handling needed:
- * <details> already toggles via its own <summary>) instead of a row of
- * pills, so a user with many custom categories isn't confronted with all
- * of them at once. Pure filtering only -- category creation lives in
- * TodoForm instead (a user wants to make a new category while making a
- * task, not while searching/filtering an existing list).
- */
-function CategoryFilterDropdown({
-  allCategories,
-  selected,
-  onToggle,
-  onClear,
-}: {
-  allCategories: string[];
-  selected: Set<string>;
-  onToggle: (c: string) => void;
-  onClear: () => void;
-}) {
-  return (
-    <details className="relative">
-      <summary className="list-none cursor-pointer bg-secondary border border-border rounded-md px-3 py-1.5 text-sm select-none">
-        Categories{selected.size > 0 ? ` (${selected.size})` : ""}
-      </summary>
-      <div className="absolute z-10 mt-1 w-56 bg-card border border-border rounded-lg shadow-lg p-2">
-        <div className="max-h-48 overflow-y-auto flex flex-col gap-0.5">
-          {allCategories.map((c) => (
-            <label key={c} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-secondary text-sm capitalize cursor-pointer">
-              <input type="checkbox" checked={selected.has(c)} onChange={() => onToggle(c)} />
-              {c}
-            </label>
-          ))}
-        </div>
-        {selected.size > 0 && (
-          <button type="button" onClick={onClear} className="text-xs text-muted-foreground hover:text-foreground underline mt-1 ml-2">
-            Clear selection
-          </button>
-        )}
-      </div>
-    </details>
   );
 }
 
@@ -411,8 +303,9 @@ export function Todos() {
           placeholder="Search by name..."
           className="flex-1 min-w-[140px] bg-secondary border border-border rounded-md px-3 py-1.5 text-sm"
         />
-        <CategoryFilterDropdown
-          allCategories={allCategories}
+        <QualitativeFieldFilter
+          label="Categories"
+          options={allCategories}
           selected={categoryFilters}
           onToggle={toggleCategoryFilter}
           onClear={() => setCategoryFilters(new Set())}

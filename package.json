@@ -1,6 +1,6 @@
 {
   "name": "trackstack-ui",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Shared React component library for TrackStack apps",
   "type": "module",
   "main": "./dist/index.cjs",

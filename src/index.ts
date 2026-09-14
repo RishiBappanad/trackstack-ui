@@ -7,6 +7,11 @@ export type { AppSwitcherProps } from "./components/AppSwitcher.js";
 export { ProfileCard } from "./components/ProfileCard.js";
 export type { ProfileCardProps } from "./components/ProfileCard.js";
 
+export { QualitativeFieldFilter } from "./components/QualitativeFieldFilter.js";
+export type { QualitativeFieldFilterProps } from "./components/QualitativeFieldFilter.js";
+export { QualitativeFieldSelect } from "./components/QualitativeFieldSelect.js";
+export type { QualitativeFieldSelectProps } from "./components/QualitativeFieldSelect.js";
+
 export { useAppRegistry } from "./hooks/useAppRegistry.js";
 export { useTrackStackAuth } from "./hooks/useTrackStackAuth.js";
 export type {
