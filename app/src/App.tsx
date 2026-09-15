@@ -4,6 +4,7 @@ import { useTrackStackAuth, useCurrentUser, AppSwitcher, MobileAppSwitcher } fro
 import { Login } from "./components/Login.js";
 import { Home } from "./pages/Home.js";
 import { Todos } from "./pages/Todos.js";
+import { Calendar } from "./pages/Calendar.js";
 import { Tokens } from "./pages/Tokens.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
@@ -59,6 +60,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           <nav className="flex gap-1">
             <NavLink href="/">Home</NavLink>
             <NavLink href="/todos">Todos</NavLink>
+            <NavLink href="/calendar">Calendar</NavLink>
             <NavLink href="/tokens">Developer</NavLink>
           </nav>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -72,6 +74,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           <Switch>
             <Route path="/" component={Home} />
             <Route path="/todos" component={Todos} />
+            <Route path="/calendar" component={Calendar} />
             <Route path="/tokens" component={Tokens} />
             <Route>
               <p className="text-muted-foreground">Page not found.</p>

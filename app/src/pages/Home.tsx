@@ -1,6 +1,6 @@
 import { useTrackStackAuth, useCurrentUser, useAppRegistry } from "trackstack-ui";
 import { Link } from "wouter";
-import { CheckSquare, KeyRound } from "lucide-react";
+import { CheckSquare, KeyRound, CalendarDays } from "lucide-react";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -23,6 +23,16 @@ export function Home() {
           <div>
             <div className="font-medium text-sm">Todos</div>
             <div className="text-xs text-muted-foreground">Manage your cross-app todo list</div>
+          </div>
+        </Link>
+        <Link
+          href="/calendar"
+          className="flex items-center gap-3 bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
+        >
+          <CalendarDays className="h-5 w-5 text-primary flex-shrink-0" />
+          <div>
+            <div className="font-medium text-sm">Calendar</div>
+            <div className="text-xs text-muted-foreground">Everything logged, across every tracker</div>
           </div>
         </Link>
         <Link
