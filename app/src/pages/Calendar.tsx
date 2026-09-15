@@ -93,7 +93,7 @@ export function Calendar() {
     setError(null);
     const start = grid[0]!.date;
     const end = grid[grid.length - 1]!.date;
-    apiFetch("", `/calendar?start=${start}&end=${end}`, token)
+    apiFetch("", `/api/calendar?start=${start}&end=${end}`, token)
       .then((data) => {
         if (cancelled) return;
         const res = data as CalendarResponse;
