@@ -23,5 +23,6 @@ export { useCurrentUser } from "./hooks/useCurrentUser.js";
 export type { UseCurrentUserResult } from "./hooks/useCurrentUser.js";
 
 export { cn } from "./lib/cn.js";
+export { getHomeAppUrl, redirectToLogin } from "./lib/redirectToLogin.js";
 
 export type { TrackStackApp, TrackStackAccount } from "./types.js";
