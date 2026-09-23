@@ -43,14 +43,17 @@ jobs:
         #
         # home is always served at "/" (the gateway's catch-all, never a
         # sub-path -- see trackstack-gateway's routes.ts), so BASE_PATH
-        # never needs to change; TRACKSTACK_AUTH_URL/TODO_API_BASE are
-        # gateway-relative paths since the gateway is the only origin
-        # this service is meant to be reached through.
+        # never needs to change; TRACKSTACK_AUTH_URL/TODO_API_BASE/
+        # FINANCE_API_BASE/NUTRITION_API_BASE are gateway-relative paths
+        # since the gateway is the only origin this service is meant to
+        # be reached through.
         run: |
           docker build -f app/Dockerfile \
             --build-arg BASE_PATH=/ \
             --build-arg TRACKSTACK_AUTH_URL=/auth \
             --build-arg TODO_API_BASE=/todo \
+            --build-arg FINANCE_API_BASE=/finance \
+            --build-arg NUTRITION_API_BASE=/nutrition \
             -t "${{ env.IMAGE }}" .
 
       - name: Push image
