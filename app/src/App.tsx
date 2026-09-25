@@ -8,6 +8,9 @@ import { Todos } from "./pages/Todos.js";
 import { Calendar } from "./pages/Calendar.js";
 import { Goals } from "./pages/Goals.js";
 import { Tokens } from "./pages/Tokens.js";
+import { Trackers } from "./pages/Trackers.js";
+import { NewTracker, EditTracker } from "./pages/TrackerBuilder.js";
+import { TrackerView } from "./pages/TrackerView.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -35,7 +38,9 @@ const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
 function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   const [location] = useLocation();
-  const active = location === href;
+  // Section links stay lit on their sub-pages (/trackers/runs is still
+  // "Trackers"); "/" is the exception, since everything starts with it.
+  const active = href === "/" ? location === "/" : location === href || location.startsWith(`${href}/`);
   return (
     <Link
       href={href}
@@ -64,6 +69,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             <NavLink href="/todos">Todos</NavLink>
             <NavLink href="/calendar">Calendar</NavLink>
             <NavLink href="/goals">Goals</NavLink>
+            <NavLink href="/trackers">Trackers</NavLink>
             <NavLink href="/tokens">Developer</NavLink>
           </nav>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -79,6 +85,10 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             <Route path="/todos" component={Todos} />
             <Route path="/calendar" component={Calendar} />
             <Route path="/goals" component={Goals} />
+            <Route path="/trackers" component={Trackers} />
+            <Route path="/trackers/new" component={NewTracker} />
+            <Route path="/trackers/:slug/edit" component={EditTracker} />
+            <Route path="/trackers/:slug" component={TrackerView} />
             <Route path="/tokens" component={Tokens} />
             <Route>
               <p className="text-muted-foreground">Page not found.</p>

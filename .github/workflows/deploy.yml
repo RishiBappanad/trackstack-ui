@@ -52,6 +52,7 @@ jobs:
             --build-arg BASE_PATH=/ \
             --build-arg TRACKSTACK_AUTH_URL=/auth \
             --build-arg TODO_API_BASE=/todo \
+            --build-arg CUSTOM_API_BASE=/custom \
             --build-arg FINANCE_API_BASE=/finance \
             --build-arg NUTRITION_API_BASE=/nutrition \
             -t "${{ env.IMAGE }}" .
