@@ -34,7 +34,14 @@ export default defineConfig({
   // rather than a sub-path, so it should rarely need this overridden,
   // but keeping the same knob avoids a special case.
   base: process.env.VITE_BASE_PATH || "/",
-  server: { host: true },
+  server: {
+    host: true,
+    // In production Home is served behind trackstack-gateway, so the Calendar page's
+    // same-origin `/api/calendar` reaches the gateway. The dev server has no gateway in
+    // front of it, so send that one path there. (Everything else Home calls uses an
+    // explicit VITE_*_API_BASE.) Override the target with VITE_GATEWAY_PROXY_TARGET.
+    proxy: { "/api/calendar": { target: process.env.VITE_GATEWAY_PROXY_TARGET || "http://localhost:8090", changeOrigin: true } },
+  },
   resolve: {
     alias: {
       "trackstack-ui": fileURLToPath(new URL("../src/index.ts", import.meta.url)),
