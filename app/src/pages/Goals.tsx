@@ -5,24 +5,39 @@ import { apiFetch, ApiError } from "../lib/api.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
-// Every tracker that implements the standardized Goal Query contract
-// (see workspace-notes/RECURRING_AND_GOALS_SPEC.md) gets one entry here --
-// same shape as Calendar.tsx's TRACKER_STYLES map, for the same reason:
-// Goals is a cross-tracker STANDARD but each tracker keeps its own table
-// and its own /api/goals endpoint (Tenet #1), so this page has to fan out
-// to each one itself rather than reading one central index the way
-// Calendar's /api/calendar does. Finance is the only tracker with Goals
-// built so far; add a "nutrition" entry here the day nutrition-insights'
-// own Goals ships, and this page picks it up with no other changes.
+// Which trackers show up here is DISCOVERED, not listed: every app in the
+// registry (GET /apps, the same one AppSwitcher uses) that has a configured
+// API base (VITE_<ID>_API_BASE, the convention Home.tsx's sync list already
+// uses) is probed for a goals endpoint, and the ones that answer with a goal
+// list get cards. Goals is a cross-tracker STANDARD but each tracker keeps
+// its own table and endpoint (Tenet #1), so this page fans out to each one
+// itself rather than reading one central index the way Calendar's
+// /api/calendar does -- a new tracker with Goals appears with no change here.
+//
+// TODO (workspace-notes/ACTION_ITEMS.md, "Goals card registration"): probing
+// is the interim. Trackers should REGISTER their goal-card layout (label,
+// units, what to show) through trackstack-ui, and this page should render
+// from the registry instead of guessing endpoints and formatting generically.
 interface GoalSource {
   id: string;
   label: string;
   apiBase: string;
+  /** The endpoint that answered: "/api/goals" (Express trackers) or "/goals" (FastAPI). */
+  goalsPath: string;
 }
 
-const GOAL_SOURCES: GoalSource[] = [
-  { id: "finance", label: "Finance Tracker", apiBase: import.meta.env.VITE_FINANCE_API_BASE ?? "" },
-].filter((s) => s.apiBase);
+/** Where each candidate's goals API might live, tried in order. */
+const GOALS_PROBE_PATHS = ["/api/goals", "/goals"];
+
+/** Interim: the tracker's own page for creating/editing goals. Finance's is
+ * /goals; nutrition folded Goals into its Targets page. Replaced by the
+ * registered card layout (see the TODO above). */
+const GOALS_PAGE_PATH: Record<string, string> = { nutrition: "/targets" };
+
+function apiBaseFor(appId: string): string {
+  const env = import.meta.env as Record<string, string | undefined>;
+  return env[`VITE_${appId.toUpperCase()}_API_BASE`] ?? "";
+}
 
 // ── Types -- mirrors finance-tracker's own goals/index.tsx, which mirrors
 // RECURRING_AND_GOALS_SPEC.md's Goal Query shape (the cross-tracker
@@ -34,7 +49,7 @@ const GOAL_SOURCES: GoalSource[] = [
 
 type Comparator = "lte" | "gte" | "eq" | "within_tolerance_percent";
 type Severity = "warning" | "target";
-type Aggregation = "sum" | "mean" | "median" | "min" | "max" | "count" | "percentile";
+type Aggregation = "sum" | "mean" | "median" | "min" | "max" | "count" | "percentile" | "last";
 type Period = "daily" | "weekly" | "monthly";
 type TimeWindowKind = "current_period" | "trailing" | "same_period_last_year" | "fixed_range" | "all_time";
 
@@ -69,13 +84,23 @@ interface Goal {
   reference_amount: number | null;
   reference_query: GoalQuery | null;
   inflation_adjusted: boolean;
+  // Optional display fields a tracker may send (nutrition-insights does; finance
+  // doesn't): the measure's own unit/name, its group, and whether the system
+  // created it (presets can be edited in the tracker but not deleted here).
+  unit?: string;
+  measure_label?: string;
+  group?: string;
+  is_preset?: boolean;
+  reference_scale?: number | null;
+  reference_measure?: { label: string; unit: string } | null;
 }
 
 interface GoalStatus {
-  measure_value: number;
+  measure_value: number | null; // null = nothing to measure yet (a vital with no readings)
   reference_value: number;
   percent: number;
   on_track: boolean;
+  has_data?: boolean;
 }
 
 interface SourcedGoal {
@@ -121,8 +146,25 @@ function formatMoney(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+/** A goal's numbers in ITS unit (g, mg, kcal, lb...) when the tracker sends
+ * one, dollars otherwise (finance's amounts). */
+function formatAmount(n: number | null | undefined, unit?: string): string {
+  if (n === null || n === undefined) return "—";
+  if (!unit) return formatMoney(n);
+  const value = Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10;
+  return `${value} ${unit}`;
+}
+
+function referenceText(goal: Goal): string {
+  const scale = goal.reference_scale ?? 1;
+  const ref = goal.reference_measure;
+  if (ref && (ref.label !== goal.measure_label || scale !== 1)) return `${scale === 1 ? "" : `${scale} × `}${ref.label}`;
+  return "a computed baseline";
+}
+
 function goalSubtitle(goal: Goal): string {
   const period = goal.measure_query.timeWindow.period;
+  if (goal.measure_query.aggregation === "last" && !goal.reference_query) return "latest reading";
   if (goal.reference_query) {
     const ref = goal.reference_query;
     const baselineDesc =
@@ -132,6 +174,8 @@ function goalSubtitle(goal: Goal): string {
         ? `same ${periodLabel(ref.timeWindow.period)} ${ref.timeWindow.count === 1 ? "last year" : `${ref.timeWindow.count} years back`}`
         : ref.timeWindow.kind === "all_time"
         ? "all-time"
+        : ref.timeWindow.kind === "current_period"
+        ? `this same ${periodLabel(ref.timeWindow.period)}`
         : "a fixed range";
     return `${goal.measure_query.aggregation} per ${periodLabel(period)}, vs. ${baselineDesc}${goal.inflation_adjusted ? " (inflation-adjusted)" : ""}`;
   }
@@ -148,7 +192,9 @@ function GoalCard({
   onDelete: (item: SourcedGoal) => void;
 }) {
   const { source, goal, status } = item;
-  const category = categoryFromQuery(goal.measure_query) ?? "Every category";
+  const category = goal.group ?? categoryFromQuery(goal.measure_query) ?? "Every category";
+  const title = goal.label || goal.measure_label || category;
+  const noData = status !== undefined && status.has_data === false;
   const isWarning = goal.severity === "warning";
 
   return (
@@ -181,7 +227,7 @@ function GoalCard({
             />
           </div>
           <div className="min-w-0">
-            <p className="font-medium text-sm truncate">{goal.label || category}</p>
+            <p className="font-medium text-sm truncate">{title}</p>
             <p className="text-xs text-muted-foreground truncate">
               {category} · {source.label}
             </p>
@@ -201,20 +247,24 @@ function GoalCard({
               <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
             </a>
           )}
-          <button onClick={() => onDelete(item)} className="p-1 rounded hover:bg-secondary" aria-label="Delete goal">
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-          </button>
+          {!goal.is_preset && (
+            <button onClick={() => onDelete(item)} className="p-1 rounded hover:bg-secondary" aria-label="Delete goal">
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            </button>
+          )}
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground mt-3">
         {comparatorLabel(goal.comparator, goal.tolerance_percent)}{" "}
-        {goal.reference_query ? "a computed baseline" : formatMoney(goal.reference_amount ?? 0)} — {goalSubtitle(goal)}
+        {goal.reference_query ? referenceText(goal) : formatAmount(goal.reference_amount ?? 0, goal.unit)} — {goalSubtitle(goal)}
       </p>
 
       <div className="mt-3">
         {status === undefined ? (
           <div className="h-1.5 w-full bg-secondary rounded-full animate-pulse" />
+        ) : noData ? (
+          <p className="text-sm text-muted-foreground">No readings yet.</p>
         ) : (
           <>
             <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
@@ -228,8 +278,8 @@ function GoalCard({
             </div>
             <div className="flex items-center justify-between mt-2">
               <span className="text-sm font-mono">
-                {formatMoney(status.measure_value)}{" "}
-                <span className="text-muted-foreground">/ {formatMoney(status.reference_value)}</span>
+                {formatAmount(status.measure_value, goal.unit)}{" "}
+                <span className="text-muted-foreground">/ {formatAmount(status.reference_value, goal.unit)}</span>
               </span>
               <span
                 className={
@@ -255,51 +305,74 @@ function GoalCard({
   );
 }
 
+/** Probes one registry app for a goals endpoint. Returns its goals (and where
+ * they were found) when the app has one; null when it doesn't (404, or a
+ * response that isn't a goal list -- e.g. an SPA's index.html for an unknown
+ * route); throws for a real failure (auth, server error, unreachable), which
+ * is shown rather than silently treated as "no goals". */
+async function probeForGoals(appId: string, label: string, token: string | null): Promise<{ source: GoalSource; goals: Goal[] } | null> {
+  const apiBase = apiBaseFor(appId);
+  if (!apiBase) return null;
+  for (const goalsPath of GOALS_PROBE_PATHS) {
+    try {
+      const body = await apiFetch(apiBase, `${goalsPath}?active=true`, token);
+      if (Array.isArray(body)) return { source: { id: appId, label, apiBase, goalsPath }, goals: body as Goal[] };
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.status === 405)) continue;
+      throw e;
+    }
+  }
+  return null;
+}
+
 export function Goals() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const apps = useAppRegistry(AUTH_BASE_URL);
   const [items, setItems] = useState<SourcedGoal[]>([]);
+  const [sources, setSources] = useState<GoalSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ source: string; error: string }[]>([]);
 
-  const sources = useMemo(() => GOAL_SOURCES, []);
-
-  // A source's own /goals page, not this page, is where creating and
-  // editing actually happens (see GOAL_SOURCES' comment on why this page
-  // doesn't rebuild finance's own Advanced-tab form) -- resolved from the
-  // SAME app registry AppSwitcher/Home's own tracker links already use,
-  // not a second hardcoded URL, so it can't drift from wherever that
+  // A source's own goals page, not this page, is where creating and editing
+  // actually happens -- resolved from the SAME app registry AppSwitcher/Home's
+  // own tracker links already use, so it can't drift from wherever that
   // tracker is actually reachable in this deployment.
   const trackerGoalsHref = useMemo(() => {
     const map: Record<string, string> = {};
     for (const source of sources) {
       const app = apps.find((a) => a.id === source.id);
-      if (app) map[source.id] = `${app.href}/goals`;
+      if (app) map[source.id] = `${app.href}${GOALS_PAGE_PATH[source.id] ?? "/goals"}`;
     }
     return map;
   }, [sources, apps]);
 
   useEffect(() => {
-    if (!token || sources.length === 0) return;
+    // The registry lists Home itself too; it isn't a tracker.
+    const candidates = apps.filter((a) => a.id !== "home");
+    if (!token || candidates.length === 0) return;
     let cancelled = false;
     setLoading(true);
     setErrors([]);
+    setItems([]);
+    setSources([]);
 
     Promise.all(
-      sources.map(async (source) => {
+      candidates.map(async (app) => {
         try {
-          const goals = (await apiFetch(source.apiBase, "/api/goals?active=true", token)) as Goal[];
+          const found = await probeForGoals(app.id, app.label, token);
+          if (!found) return [];
+          if (!cancelled) setSources((prev) => [...prev, found.source]);
           const statuses = await Promise.all(
-            goals.map((goal) =>
-              apiFetch(source.apiBase, `/api/goals/${goal.id}/status`, token)
+            found.goals.map((goal) =>
+              apiFetch(found.source.apiBase, `${found.source.goalsPath}/${goal.id}/status`, token)
                 .then((s) => s as GoalStatus)
                 .catch(() => undefined)
             )
           );
-          return goals.map((goal, i): SourcedGoal => ({ source, goal, status: statuses[i] }));
+          return found.goals.map((goal, i): SourcedGoal => ({ source: found.source, goal, status: statuses[i] }));
         } catch (e) {
           if (!cancelled) {
-            setErrors((prev) => [...prev, { source: source.label, error: e instanceof ApiError ? e.message : "Failed to load" }]);
+            setErrors((prev) => [...prev, { source: app.label, error: e instanceof ApiError ? e.message : "Failed to load" }]);
           }
           return [];
         }
@@ -313,12 +386,12 @@ export function Goals() {
     return () => {
       cancelled = true;
     };
-  }, [token, sources]);
+  }, [token, apps]);
 
   async function handleDelete(item: SourcedGoal) {
     setItems((prev) => prev.filter((i) => !(i.source.id === item.source.id && i.goal.id === item.goal.id)));
     try {
-      await apiFetch(item.source.apiBase, `/api/goals/${item.goal.id}`, token, { method: "DELETE" });
+      await apiFetch(item.source.apiBase, `${item.source.goalsPath}/${item.goal.id}`, token, { method: "DELETE" });
     } catch {
       // Best-effort optimistic delete -- a failed DELETE just means the
       // goal reappears on next reload, same tradeoff Todos.tsx's own
@@ -331,8 +404,10 @@ export function Goals() {
       <h1 className="text-2xl mb-1">Goals</h1>
       <p className="text-muted-foreground mb-4 text-sm">Every goal across your trackers, in one view.</p>
 
-      {sources.length === 0 && (
-        <p className="text-sm text-muted-foreground">No tracker with Goals configured for this deployment yet.</p>
+      {!loading && sources.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No tracker with a goals endpoint was found for this deployment (checked every registered tracker that has an API base configured).
+        </p>
       )}
 
       {sources.length > 0 && (
@@ -353,7 +428,7 @@ export function Goals() {
 
       {errors.length > 0 && (
         <div className="mb-4 p-2 rounded-md bg-destructive/10 text-destructive text-xs">
-          Couldn't load: {errors.map((e) => e.source).join(", ")} — showing the rest.
+          Couldn't load: {errors.map((e) => `${e.source} (${e.error})`).join(", ")} — showing the rest.
         </div>
       )}
 
