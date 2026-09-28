@@ -44,6 +44,15 @@ export interface CalendarEntryInput {
   category?: string | null;
   amount?: number | null;
   label?: string | null;
+  /** Free-form, interpreted only by whatever renders the calendar (e.g.
+   * "orange" while pending, "green" once matched/completed) -- the gateway
+   * just stores and returns it. Omit/null clears it. */
+  color?: string | null;
+  /** A deep link into the OWNING tracker's own frontend for this exact
+   * entity (e.g. "/recurring?item=7") -- how "editing" a calendar entry
+   * works: click through to the tracker that actually owns the data,
+   * rather than the calendar exposing any edit surface of its own. */
+  link?: string | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -61,6 +70,8 @@ function buildRequestBody(tracker: string, entry: CalendarEntryInput): Record<st
     category: entry.category ?? null,
     amount: entry.amount ?? null,
     label: entry.label ?? null,
+    color: entry.color ?? null,
+    link: entry.link ?? null,
     metadata: entry.metadata ?? {},
   };
   // Omitted entirely (not sent as null) when the caller doesn't pass one,
