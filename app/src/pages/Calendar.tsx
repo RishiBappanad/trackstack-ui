@@ -13,6 +13,16 @@ interface CalendarEvent {
   amount: number;
   label: string | null;
   tracker: string;
+  /** Set by the owning tracker (e.g. "orange" while pending, "green" once
+   * matched/completed) -- free-form, not a fixed enum (see
+   * CALENDAR_INTEGRATION_SPEC.md). Falls back to trackerStyle's per-tracker
+   * default dot color when null, so an entry that never opts into color
+   * still renders exactly as it always has. */
+  color: string | null;
+  /** A deep link into the owning tracker's own frontend for this entry --
+   * how "editing" a calendar entry works: click through to the tracker
+   * that actually owns the data. */
+  link: string | null;
 }
 
 interface CalendarResponse {
@@ -29,6 +39,20 @@ const TRACKER_STYLES: Record<string, { dot: string; text: string }> = {
 
 function trackerStyle(tracker: string) {
   return TRACKER_STYLES[tracker] ?? { dot: "bg-muted-foreground", text: "text-muted-foreground" };
+}
+
+// Free-form color names a tracker can set on its own entry (see
+// CalendarEvent.color) -- not exhaustive, just every value a tracker
+// actually sends today; an unrecognized one falls back to the tracker's
+// own default dot color, same as null does.
+const ENTRY_COLOR_DOTS: Record<string, string> = {
+  orange: "bg-orange-500",
+  green: "bg-emerald-500",
+  red: "bg-red-500",
+};
+
+function dotClassFor(e: CalendarEvent): string {
+  return (e.color && ENTRY_COLOR_DOTS[e.color]) || trackerStyle(e.tracker).dot;
 }
 
 // occurred_at is a full ISO timestamp, but this page groups by calendar
@@ -190,7 +214,7 @@ export function Calendar() {
               <span className={"text-xs " + (isToday ? "font-bold text-primary" : "text-muted-foreground")}>{dayNum}</span>
               <div className="flex flex-wrap gap-0.5">
                 {dayEvents.slice(0, 4).map((e) => (
-                  <span key={e.id + e.tracker} className={"h-1.5 w-1.5 rounded-full " + trackerStyle(e.tracker).dot} title={e.label ?? e.event_type} />
+                  <span key={e.id + e.tracker} className={"h-1.5 w-1.5 rounded-full " + dotClassFor(e)} title={e.label ?? e.event_type} />
                 ))}
                 {dayEvents.length > 4 && <span className="text-[10px] text-muted-foreground">+{dayEvents.length - 4}</span>}
               </div>
@@ -209,8 +233,14 @@ export function Calendar() {
           <ul className="space-y-2">
             {selectedEvents.map((e) => (
               <li key={e.id + e.tracker} className="flex items-center gap-2 text-sm">
-                <span className={"h-2 w-2 rounded-full flex-shrink-0 " + trackerStyle(e.tracker).dot} />
-                <span className="flex-1 truncate">{e.label ?? e.event_type}</span>
+                <span className={"h-2 w-2 rounded-full flex-shrink-0 " + dotClassFor(e)} />
+                {e.link ? (
+                  <a href={e.link} target="_blank" rel="noreferrer" className="flex-1 truncate hover:underline" title="Open in the owning tracker">
+                    {e.label ?? e.event_type}
+                  </a>
+                ) : (
+                  <span className="flex-1 truncate">{e.label ?? e.event_type}</span>
+                )}
                 {e.category && <span className="text-xs text-muted-foreground">{e.category}</span>}
                 <span className={"text-xs " + trackerStyle(e.tracker).text}>{e.tracker}</span>
               </li>
