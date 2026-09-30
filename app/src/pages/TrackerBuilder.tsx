@@ -3,7 +3,10 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { FIELD_TYPES, customApi, slugify, uniqueSlug, type FieldDef, type FieldType, type TrackerDefinition } from "../lib/customTrackers.js";
+import {
+  FIELD_TYPES, ICON_COMPONENTS, ICON_NAMES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
+  type FieldDef, type FieldType, type IconName, type TrackerDefinition,
+} from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -51,6 +54,8 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
   const [categoryField, setCategoryField] = useState(existing?.category_field ?? "");
   const [labelField, setLabelField] = useState(existing?.label_field ?? "");
   const [dateField, setDateField] = useState(existing?.date_field ?? "");
+  const [icon, setIcon] = useState<IconName | "">(existing?.icon ?? "");
+  const [pinned, setPinned] = useState(existing?.pinned ?? false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -100,6 +105,8 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
       category_field: categoryField || null,
       label_field: labelField || null,
       date_field: dateField || null,
+      icon: icon || null,
+      pinned,
     };
     try {
       if (existing) {
@@ -109,6 +116,10 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
         await customApi("/trackers", token, { method: "POST", body: JSON.stringify({ ...body, slug }) });
         onSaved(slug);
       }
+      // Whether pinned itself changed, or just the name/icon of an
+      // already-pinned tracker, the sidebar's cheap way to notice is to
+      // just always ask it to recheck rather than tracking what changed.
+      notifyPinnedTrackersChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not save the tracker");
       setSaving(false);
@@ -229,6 +240,48 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
             </label>
           </div>
         )}
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-lg">Sidebar</h2>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Icon">
+          {ICON_NAMES.map((name) => {
+            const Icon = ICON_COMPONENTS[name];
+            const selected = icon === name;
+            return (
+              <button
+                key={name}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                title={name}
+                onClick={() => {
+                  // Clearing the icon while pinned would be rejected
+                  // server-side (a pinned tracker must have one) -- unpin
+                  // here too, rather than surfacing that as a save error.
+                  if (selected) setPinned(false);
+                  setIcon(selected ? "" : name);
+                }}
+                className={
+                  "w-9 h-9 rounded-md flex items-center justify-center border " +
+                  (selected ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:text-foreground")
+                }
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            );
+          })}
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={pinned}
+            disabled={!icon}
+            onChange={(e) => setPinned(e.target.checked)}
+          />
+          Pin to the sidebar
+        </label>
+        {!icon && <p className="text-xs text-muted-foreground">Pick an icon to pin this tracker to the sidebar.</p>}
       </section>
 
       <div className="flex items-center gap-3">

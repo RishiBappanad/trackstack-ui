@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { Pencil, Trash2, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { customApi, formatValue, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
+import { customApi, formatValue, notifyPinnedTrackersChanged, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -172,6 +172,7 @@ export function TrackerView() {
     if (!window.confirm(`Delete "${def.name}" and all ${entries.length} of its entries? This can't be undone.`)) return;
     try {
       await customApi(`/trackers/${slug}`, token, { method: "DELETE" });
+      notifyPinnedTrackersChanged(); // a deleted pinned tracker must disappear from the sidebar too
       navigate("/trackers");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not delete the tracker");

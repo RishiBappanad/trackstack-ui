@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
-import { Plus } from "lucide-react";
+import { LayoutDashboard, Plus, Star } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { CUSTOM_BASE_URL, customApi, type TrackerDefinition } from "../lib/customTrackers.js";
+import { CUSTOM_BASE_URL, ICON_COMPONENTS, customApi, type TrackerDefinition } from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -50,13 +50,24 @@ export function Trackers() {
       )}
 
       <div className="grid gap-3">
-        {trackers?.map((t) => (
-          <Link key={t.slug} href={`/trackers/${t.slug}`} className="block bg-card border border-border rounded-lg p-4 hover:border-foreground/30">
-            <div className="font-medium">{t.name}</div>
-            {t.description && <div className="text-sm text-muted-foreground mt-0.5">{t.description}</div>}
-            <div className="text-xs text-muted-foreground mt-2">{t.fields.map((f) => f.label).join(" · ")}</div>
-          </Link>
-        ))}
+        {trackers?.map((t) => {
+          const Icon = t.icon ? ICON_COMPONENTS[t.icon] : LayoutDashboard;
+          return (
+            <Link key={t.slug} href={`/trackers/${t.slug}`} className="flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-foreground/30">
+              <div className="w-9 h-9 rounded-md bg-secondary flex items-center justify-center flex-shrink-0">
+                <Icon className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium">{t.name}</span>
+                  {t.pinned && <Star className="h-3 w-3 text-muted-foreground" aria-label="Pinned to sidebar" />}
+                </div>
+                {t.description && <div className="text-sm text-muted-foreground mt-0.5">{t.description}</div>}
+                <div className="text-xs text-muted-foreground mt-2">{t.fields.map((f) => f.label).join(" · ")}</div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

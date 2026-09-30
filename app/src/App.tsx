@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Route, Switch, Link, useLocation } from "wouter";
 import { useTrackStackAuth, useCurrentUser, useAppRegistry, AppSwitcher, MobileAppSwitcher } from "trackstack-ui";
-import type { TrackStackApp } from "trackstack-ui";
+import type { TrackStackApp, AppSwitcherExtraItem } from "trackstack-ui";
+import { usePinnedTrackers, ICON_COMPONENTS } from "./lib/customTrackers.js";
 import { Login } from "./components/Login.js";
 import { Home } from "./pages/Home.js";
 import { Todos } from "./pages/Todos.js";
@@ -57,12 +58,21 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 function Shell({ onLogout }: { onLogout: () => void }) {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const { user } = useCurrentUser(AUTH_BASE_URL, token);
+  const [location] = useLocation();
+  const pinnedTrackers = usePinnedTrackers(token);
+  const extraItems: AppSwitcherExtraItem[] = pinnedTrackers.map((t) => ({
+    id: `custom_${t.slug}`,
+    label: t.name,
+    href: `/trackers/${t.slug}`,
+    icon: t.icon,
+    active: location === `/trackers/${t.slug}`,
+  }));
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
-      <AppSwitcher authBaseUrl={AUTH_BASE_URL} currentAppId="home" />
+      <AppSwitcher authBaseUrl={AUTH_BASE_URL} currentAppId="home" iconMap={ICON_COMPONENTS} extraItems={extraItems} />
       <div className="flex-1 flex flex-col min-w-0">
-        <MobileAppSwitcher authBaseUrl={AUTH_BASE_URL} currentAppId="home" />
+        <MobileAppSwitcher authBaseUrl={AUTH_BASE_URL} currentAppId="home" iconMap={ICON_COMPONENTS} extraItems={extraItems} />
         <header className="flex items-center justify-between px-6 py-4 border-b border-border">
           <nav className="flex gap-1">
             <NavLink href="/">Home</NavLink>
