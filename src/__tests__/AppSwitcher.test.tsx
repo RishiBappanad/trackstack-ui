@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import { Dumbbell } from "lucide-react";
 import { AppSwitcher } from "../components/AppSwitcher.js";
 
 const APPS = [
@@ -61,5 +62,28 @@ describe("AppSwitcher", () => {
       <AppSwitcher authBaseUrl="https://auth.example.com" currentAppId="nutrition" />
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  describe("extraItems", () => {
+    const extraItems = [{ id: "custom_runs", label: "Runs", href: "/trackers/runs", icon: "Dumbbell", active: true }];
+
+    it("renders an extra item alongside the registered apps, using its own `active` rather than currentAppId", async () => {
+      render(<AppSwitcher authBaseUrl="https://auth.example.com" currentAppId="nutrition" iconMap={{ Dumbbell }} extraItems={extraItems} />);
+      const link = await screen.findByTitle("Runs");
+      expect(link).toHaveAttribute("href", "/trackers/runs");
+      expect(link.className).toContain("bg-switcher-active");
+      // The registered app itself is unaffected -- still governed by currentAppId.
+      expect((await screen.findByTitle("Nutrition Insights")).className).toContain("bg-switcher-active");
+    });
+
+    it("renders even with an empty registry, and nothing at all with neither", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: () => Promise.resolve([]) }));
+      const { container } = render(<AppSwitcher authBaseUrl="https://auth.example.com" currentAppId="nutrition" extraItems={extraItems} />);
+      await waitFor(() => expect(screen.getByTitle("Runs")).toBeInTheDocument());
+
+      const { container: empty } = render(<AppSwitcher authBaseUrl="https://auth.example.com" currentAppId="nutrition" />);
+      await waitFor(() => expect(empty).toBeEmptyDOMElement());
+      expect(container).not.toBeEmptyDOMElement();
+    });
   });
 });

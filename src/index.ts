@@ -2,7 +2,7 @@
 // to change for a consuming app to pick it up (see the README's
 // "Adding to this library" section).
 export { AppSwitcher, MobileAppSwitcher } from "./components/AppSwitcher.js";
-export type { AppSwitcherProps } from "./components/AppSwitcher.js";
+export type { AppSwitcherProps, AppSwitcherExtraItem } from "./components/AppSwitcher.js";
 
 export { ProfileCard } from "./components/ProfileCard.js";
 export type { ProfileCardProps } from "./components/ProfileCard.js";
