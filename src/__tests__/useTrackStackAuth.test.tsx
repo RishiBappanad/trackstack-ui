@@ -211,12 +211,11 @@ describe("useTrackStackAuth", () => {
   });
 
   it("loginWithGoogle() defaults returnTo to origin + pathname, not just origin", async () => {
-    // Regression test for a real bug (2026-09-12): with every TrackStack
-    // app potentially living behind trackstack-gateway on one shared
-    // origin (gateway/nutrition, gateway/finance), an origin-only
-    // default silently drops which app the user was on, so
-    // trackstack-auth's /google/callback redirect landed on the
-    // gateway's bare root instead of back on the caller.
+    // With every TrackStack app potentially living behind
+    // trackstack-gateway on one shared origin (gateway/nutrition,
+    // gateway/finance), an origin-only default would silently drop which
+    // app the user was on, landing trackstack-auth's /google/callback
+    // redirect on the gateway's bare root instead of back on the caller.
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { url: "https://accounts.google.com/redirect" }));
     vi.stubGlobal("fetch", fetchMock);
     const originalLocation = window.location;

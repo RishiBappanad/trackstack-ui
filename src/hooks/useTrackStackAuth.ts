@@ -79,10 +79,7 @@ export interface UseTrackStackAuthResult {
  * `authBaseUrl`) issues one via login/register/Google -- the full
  * client-side surface every TrackStack app needs to talk to
  * trackstack-auth, in one place instead of each app hand-rolling the
- * same three fetch calls independently (see workspace-notes/
- * ACTION_ITEMS.md's cross-repo duplication scan, 2026-09-10: this hook
- * existed with zero consumers while nutrition-insights and
- * finance-tracker each reimplemented the whole thing from scratch).
+ * same three fetch calls independently.
  * Does not verify or decode the token -- that's each backend's job on
  * every request (see CLAUDE.md's Authentication Flow: "Each tracker
  * verifies JWT locally"). */
@@ -145,14 +142,11 @@ export function useTrackStackAuth(
   const loginWithGoogle = useCallback(
     async (returnTo?: string) => {
       // Defaults to origin + pathname, not just origin -- with every
-      // TrackStack app now potentially living behind trackstack-gateway
-      // on one shared origin (e.g. gateway/nutrition, gateway/finance),
-      // an origin-only default silently drops which app the user was
+      // TrackStack app potentially living behind trackstack-gateway on
+      // one shared origin (e.g. gateway/nutrition, gateway/finance), an
+      // origin-only default silently drops which app the user was
       // actually on, so trackstack-auth's /google/callback redirect
       // lands on the gateway's bare root instead of back on the caller.
-      // Real bug, not hypothetical: nutrition-insights and finance-tracker
-      // both explicitly passed window.location.origin at their own call
-      // sites before this fix (2026-09-12) and hit exactly this.
       const target = returnTo ?? (typeof window === "undefined" ? "" : window.location.origin + window.location.pathname);
       const res = await fetch(`${authBaseUrl}/google?returnTo=${encodeURIComponent(target)}`);
       const data = await res.json();

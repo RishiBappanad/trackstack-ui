@@ -12,11 +12,10 @@ const NEW_VALUE_SENTINEL = "__qualitative_field_new_value__";
  * user_categories table in Postgres, or something else -- the caller
  * owns fetching/merging the option list and persisting a new one.
  *
- * Extracted 2026-09-14 from todo-tracker's create/edit form, after
- * creation was deliberately moved OUT of the sibling
- * QualitativeFieldFilter component (a user wants to make a new value
- * while creating/editing the thing it's attached to, not while
- * filtering an existing list).
+ * Deliberately separate from the sibling QualitativeFieldFilter
+ * component, which has no create-new-value affordance: a user wants to
+ * make a new value while creating/editing the thing it's attached to,
+ * not while filtering an existing list.
  */
 export interface QualitativeFieldSelectProps {
   value: string;

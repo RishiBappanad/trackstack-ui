@@ -41,12 +41,10 @@ describe("AppSwitcher", () => {
   });
 
   it("styles the active item against switcher-active-foreground, not primary-foreground", async () => {
-    // Regression test for a real bug (2026-09-12): finance-tracker's dark
-    // theme has primary-foreground sitting near-black to pair with a
-    // light `primary` button -- reusing it here made the active icon
-    // nearly invisible against switcher-active, which happens to be a
-    // similarly dark color there. switcher-active-foreground is its own
-    // token specifically so each app can contrast it correctly.
+    // A theme's primary-foreground is chosen to pair with `primary`, an
+    // unrelated color -- reusing it here instead of a dedicated token
+    // risks an active icon that's invisible against switcher-active in
+    // any theme where the two colors happen to be similarly dark.
     render(<AppSwitcher authBaseUrl="https://auth.example.com" currentAppId="finance" />);
     const financeLink = await screen.findByTitle("Finance Tracker");
     expect(financeLink.className).toContain("text-switcher-active-foreground");

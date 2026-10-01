@@ -38,13 +38,13 @@ function todoToFormValues(t: Todo): TodoFormValues {
 
 // due_at is a calendar date, not a moment in time -- there's no "time of
 // day" a todo is due. Treating it as one (running it through `new Date()`
-// and letting the browser's local timezone reinterpret it) is exactly
-// what caused a real, confirmed bug: saving "2026-12-25" from the date
-// picker round-tripped through `new Date("2026-12-25").toISOString()`
-// (parsed as UTC midnight) and back through `.toLocaleDateString()`
-// (rendered in local time), which showed "12/24/2026" for anyone west of
-// UTC. Both directions below work on the YYYY-MM-DD string directly and
-// never construct a Date object from it, so no timezone is ever involved.
+// and letting the browser's local timezone reinterpret it) would show
+// the wrong date for anyone not at UTC: saving "2026-12-25" would
+// round-trip through `new Date("2026-12-25").toISOString()` (parsed as
+// UTC midnight) and back through `.toLocaleDateString()` (rendered in
+// local time), landing on "12/24" west of UTC. Both directions below
+// work on the YYYY-MM-DD string directly and never construct a Date
+// object from it, so no timezone is ever involved.
 function dateInputValueToDueAt(value: string): string {
   return `${value}T00:00:00.000Z`;
 }
@@ -57,10 +57,8 @@ const EMPTY_FORM: TodoFormValues = { title: "", category: "personal", priority: 
 
 /**
  * One shared form for both creating a todo (no `initial`/`onCancel`) and
- * editing one in place (both provided) -- previously these were two
- * separately hand-maintained forms with their own duplicated state and
- * JSX, which is exactly how the create form silently ended up missing
- * fields (due date, notes) that the edit form gained later.
+ * editing one in place (both provided), so the two can never drift out
+ * of sync with each other's fields.
  */
 function TodoForm({
   initial,

@@ -10,10 +10,7 @@
  * whether `options` came from a fixed enum, a user_categories table, or
  * something else. Creating new values lives in QualitativeFieldSelect
  * instead: a user wants to make a new value while creating/editing the
- * thing it's attached to, not while filtering an existing list (see
- * todo-tracker's Todos page, this component's first extraction source,
- * for the reasoning -- category creation started here and was moved
- * after exactly that feedback).
+ * thing it's attached to, not while filtering an existing list.
  */
 export interface QualitativeFieldFilterProps {
   /** Button label, e.g. "Categories". */

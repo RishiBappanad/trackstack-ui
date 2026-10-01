@@ -5,15 +5,13 @@ import { useCurrentUser } from "../hooks/useCurrentUser.js";
 
 /**
  * Deliberately scoped to what's actually generic across every tracker:
- * identity (name/email), a settings link, and logout. The original
- * plan (see workspace-notes/ACTION_ITEMS.md's P1.3) also called for
- * "quick stats (today's summary, current goal)" -- that's inherently
- * tracker-specific (nutrition's "today's summary" and finance's don't
- * share a shape), so instead of inventing a fake generic stats format,
- * `children` is where a consuming app renders its own summary widget
- * underneath the identity block. Don't build a generic stats renderer
- * here until a second tracker's actual shape is known well enough to
- * find the real common structure, if any.
+ * identity (name/email), a settings link, and logout. A "quick stats"
+ * section (today's summary, current goal) is inherently tracker-specific
+ * (nutrition's "today's summary" and finance's don't share a shape), so
+ * instead of inventing a fake generic stats format, `children` is where
+ * a consuming app renders its own summary widget underneath the identity
+ * block. Don't build a generic stats renderer here until enough real
+ * trackers' shapes are known to find the actual common structure, if any.
  */
 export interface ProfileCardProps {
   authBaseUrl: string;

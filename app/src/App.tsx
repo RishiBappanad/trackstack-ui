@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Route, Switch, Link, useLocation } from "wouter";
 import { useTrackStackAuth, useCurrentUser, useAppRegistry, AppSwitcher, MobileAppSwitcher } from "trackstack-ui";
 import type { TrackStackApp, AppSwitcherExtraItem } from "trackstack-ui";
-import { usePinnedTrackers, ICON_COMPONENTS } from "./lib/customTrackers.js";
+import { usePinnedTrackers, ICON_COMPONENTS, CUSTOM_BASE_URL } from "./lib/customTrackers.js";
 import { Login } from "./components/Login.js";
 import { Home } from "./pages/Home.js";
 import { Todos } from "./pages/Todos.js";
@@ -19,15 +19,12 @@ const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 // useTrackStackAuth reads localStorage -- runs synchronously at module
 // load time, same pattern nutrition-insights/finance-tracker's own
 // App files already use. trackstack-auth's /google/callback redirects
-// with #trackstack_token=... (see trackstack-auth/src/routes.ts). This
-// was missing entirely here (home's App.tsx was written from scratch
-// this session rather than ported from either existing app), which
-// combined with a second bug in nutrition/finance's own Google-login
-// call sites (passing window.location.origin, losing their own
-// /nutrition or /finance path now that the gateway puts every tracker
-// on one shared origin) meant a Google login from ANY tracker landed
-// back on this page with a token in the hash that nothing ever read --
-// "Google OAuth isn't working" for the whole site, found 2026-09-12.
+// with #trackstack_token=... (see trackstack-auth/src/routes.ts). A
+// Google-login call site that passes window.location.origin instead of
+// its own tracker path loses that path once the gateway puts every
+// tracker behind one shared origin, so the redirect lands here -- this
+// extraction is what lets it still pick up the token rather than
+// leaving it unread in the hash.
 (function extractGoogleToken() {
   const hash = window.location.hash;
   const match = hash.match(/trackstack_token=([^&]+)/);
@@ -59,7 +56,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const { user } = useCurrentUser(AUTH_BASE_URL, token);
   const [location] = useLocation();
-  const pinnedTrackers = usePinnedTrackers(token);
+  const pinnedTrackers = usePinnedTrackers(CUSTOM_BASE_URL, token);
   const extraItems: AppSwitcherExtraItem[] = pinnedTrackers.map((t) => ({
     id: `custom_${t.slug}`,
     label: t.name,
@@ -181,14 +178,13 @@ export default function App() {
   // it's NOT: auth.isAuthenticated merely reflects whatever JWT happens
   // to already be cached in HOME's OWN localStorage from some earlier,
   // unrelated visit, and JWTs aren't revocable (only the shared session
-  // cookie is, on logout -- see useTrackStackAuth's logout() doc). That
-  // combination produced a real infinite loop, found 2026-09-22: a
-  // tracker logs out for real (its own token cleared, cookie cleared)
-  // and bounces here with returnTo; if Home separately still has an
-  // old, merely-not-yet-expired token of its own, the old code below
-  // treated THAT as "authenticated" and immediately bounced back to the
+  // cookie is, on logout -- see useTrackStackAuth's logout() doc). Trusting
+  // it here would risk an infinite loop: a tracker logs out for real (its
+  // own token cleared, cookie cleared) and bounces here with returnTo; if
+  // Home separately still has an old, merely-not-yet-expired token of its
+  // own, treating THAT as "authenticated" immediately bounces back to the
   // tracker the user just deliberately left -- which, still genuinely
-  // logged out, bounced right back here, forever. Gating the returnTo
+  // logged out, bounces right back here, forever. Gating the returnTo
   // path on freshlyAuthenticated instead (set only by a real trySilentSSO
   // success or an explicit login/register submission on this page load)
   // means a stale local token can no longer drive that bounce on its own.

@@ -58,8 +58,8 @@ function dotClassFor(e: CalendarEvent): string {
 // occurred_at is a full ISO timestamp, but this page groups by calendar
 // DAY -- always slice the YYYY-MM-DD prefix directly rather than routing
 // through `new Date(...)`/`toLocaleDateString()`, which reinterprets in
-// the browser's local timezone and can shift an event onto the wrong day.
-// Exactly the bug already found once in Todos.tsx's due_at handling.
+// the browser's local timezone and can shift an event onto the wrong day
+// (same class of timezone bug Todos.tsx's due_at handling guards against).
 function dayKey(occurredAt: string): string {
   return occurredAt.slice(0, 10);
 }

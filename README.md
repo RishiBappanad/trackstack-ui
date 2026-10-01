@@ -39,9 +39,8 @@ than guessing from nutrition-insights' shape alone.
 
 A separate subpath, not re-exported from the main `trackstack-ui`
 import: shared JWT-then-personal-access-token verification for a
-tracker's own **backend** (Node/Express), extracted after this exact
-fallback logic was found to be silently missing in two of three
-trackers despite being documented as universal. Has no dependency on
+tracker's own **backend** (Node/Express), kept in one place instead of
+each backend hand-rolling the same fallback logic. Has no dependency on
 React — `react`/`react-dom` are `optional` peer dependencies, so a
 backend service can `npm install trackstack-ui` for just this without
 ever installing React.
@@ -83,8 +82,7 @@ Tailwind theme must define. `AppSwitcher`/`MobileAppSwitcher` need:
 ```
 
 plus the already-common `--sidebar-ring`, `--primary-foreground`. See
-nutrition-insights' theme file for real, working values to copy — it's
-the app these were extracted from, so its values are already correct.
+nutrition-insights' theme file for real, working values to copy.
 `ProfileCard` only uses the common `--card`, `--border`, `--muted`,
 `--foreground`, `--muted-foreground` tokens most shadcn-style themes
 already define.
@@ -116,10 +114,10 @@ npm run build      # tsup -> dist/ (ESM + CJS + .d.ts)
 npm run typecheck
 ```
 
-Published to npm as `trackstack-ui` (currently `0.2.0`) — both
+Published to npm as `trackstack-ui` (currently `0.7.0`) — both
 nutrition-insights and finance-tracker depend on it for real.
 
-## `app/` — TrackStack's home page (2026-09-12)
+## `app/` — TrackStack's home page
 
 A separate React app living alongside this library in the same repo,
 under `app/`: the "center console" — cross-app tools that don't belong
@@ -131,9 +129,9 @@ now living next to it.
 **Pages**: Home (a dashboard using this library's own `AppSwitcher` to
 jump to other trackers), Todos (full CRUD against todo-tracker's API),
 Developer (personal-access-token management against trackstack-auth's
-`/tokens` routes — the previous reason to even have PATs was to hit an
-API "without necessarily needing to interact with the frontend"; this
-page is where a human actually gets one in the first place).
+`/tokens` routes — PATs exist so a script or cross-tracker action can
+hit an API without a frontend session; this page is where a human
+actually gets one in the first place).
 
 **Imports this library's own source directly** (`../src/index.ts` via a
 Vite alias), not the published npm package — this app always sees the

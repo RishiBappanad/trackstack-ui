@@ -11,7 +11,7 @@ WORKDIR /repo
 # tailwind-merge, lucide-react) resolve via Node resolution rooted at
 # ../src itself, which walks up into trackstack-ui's ROOT node_modules,
 # never sideways into app/node_modules -- see vite.config.ts's comment
-# on the alias for the full explanation (found the hard way, 2026-09-12).
+# on the alias for the full explanation.
 COPY package.json package-lock.json ./
 RUN npm ci
 

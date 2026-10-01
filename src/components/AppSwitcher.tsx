@@ -4,13 +4,9 @@ import { cn } from "../lib/cn.js";
 import { useAppRegistry } from "../hooks/useAppRegistry.js";
 
 /**
- * Extracted from two independently hand-rolled, nearly byte-identical
- * copies that already existed in nutrition-insights
- * (components/app-switcher.jsx) and finance-tracker
- * (artifacts/receipt-wallet/src/components/app-switcher.tsx) -- the
- * only real differences were which app id was hardcoded as "current"
- * and which CSS variable family was used for styling. Both hardcoded
- * details are now props instead.
+ * The app id hardcoded as "current" and the CSS variable family used for
+ * styling are both props, not hardcoded, so this one component serves
+ * every consuming app.
  *
  * Styling contract: renders Tailwind utility classes against a
  * `switcher-*` CSS custom-property family (bg-switcher,
@@ -20,18 +16,12 @@ import { useAppRegistry } from "../hooks/useAppRegistry.js";
  * -- nutrition-insights already does; see its theme file for real
  * values to copy when adopting this component elsewhere.
  *
- * `switcher-active-foreground` specifically (added 2026-09-12) must be
- * chosen to contrast against `switcher-active`, NOT reused from
- * `primary-foreground` -- that token is designed to pair with `primary`,
- * an unrelated color. This was a real, live bug: finance-tracker's dark
- * theme has `primary-foreground` sitting near-black specifically to sit
- * on top of a light `primary` button, which happens to also be nearly
- * the same darkness as `switcher-active` there, making finance's OWN
- * icon effectively invisible on finance-tracker's own page (visible
- * fine from every other app, since there it's never the active one).
- * nutrition-insights never hit this only because its `primary-foreground`
- * happens to be pure white, which coincidentally contrasts against
- * almost anything.
+ * `switcher-active-foreground` must be chosen to contrast against
+ * `switcher-active` specifically, NOT reused from `primary-foreground`
+ * -- that token is designed to pair with `primary`, an unrelated color,
+ * and a theme where the two colors happen to be similarly dark can end
+ * up with an invisible active-icon on exactly the app whose icon is
+ * currently active.
  */
 const DEFAULT_ICON_MAP: Record<string, LucideIcon> = {
   Wallet,

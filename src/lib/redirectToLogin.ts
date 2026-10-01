@@ -1,9 +1,8 @@
 import type { TrackStackApp } from "../types.js";
 
 /**
- * Looks up the deployed URL of "TrackStack Home" -- the one app that now
- * owns login/registration (per-tracker login pages were scrapped in favor
- * of a single central login, 2026-09-20) -- from trackstack-auth's own
+ * Looks up the deployed URL of "TrackStack Home" -- the one app that owns
+ * login/registration for the whole system -- from trackstack-auth's own
  * GET /apps registry, rather than a new hardcoded env var: the registry
  * is already the single source of truth for every app's public URL
  * (AppSwitcher, Google OAuth's `state`/`returnTo` origin allowlist), so
