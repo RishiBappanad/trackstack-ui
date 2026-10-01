@@ -4,9 +4,11 @@ import { useTrackStackAuth } from "trackstack-ui";
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import {
-  FIELD_TYPES, ICON_COMPONENTS, ICON_NAMES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
-  type FieldDef, type FieldType, type IconName, type TrackerDefinition,
+  ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
+  type AccentName, type FieldDef, type FieldType, type IconName, type TrackerDefinition, type ViewType,
 } from "../lib/customTrackers.js";
+
+const VIEW_LABELS: Record<ViewType, string> = { list: "List", table: "Table", chart: "Chart" };
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -56,6 +58,9 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
   const [dateField, setDateField] = useState(existing?.date_field ?? "");
   const [icon, setIcon] = useState<IconName | "">(existing?.icon ?? "");
   const [pinned, setPinned] = useState(existing?.pinned ?? false);
+  const [view, setView] = useState<ViewType>(existing?.ui_config?.view ?? "list");
+  const [accent, setAccent] = useState<AccentName | "">(existing?.ui_config?.accent ?? "");
+  const [columns, setColumns] = useState<string[]>(existing?.ui_config?.columns ?? []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -90,10 +95,22 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
     if (dateField === key) setDateField("");
   }
 
+  const chartEligible = !!amountField && summable;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSaving(true);
+    // Defensive, not the primary guard (the view picker already disables
+    // "chart" when ineligible) -- falls back to "list" instead of
+    // surfacing a 400 if amount_field/summable changed after chart was
+    // picked.
+    const effectiveView = view === "chart" && !chartEligible ? "list" : view;
+    // Tier A (ui_config: null) is the default this always starts from;
+    // only send a Tier B config once the user has actually customized
+    // something, rather than every tracker growing a populated-but-
+    // identical-to-default config the moment this section exists.
+    const uiConfig = effectiveView !== "list" || accent || columns.length ? { view: effectiveView, accent: accent || null, columns: effectiveView === "table" ? columns : [] } : null;
     const body = {
       name: name.trim(),
       description: description.trim(),
@@ -107,6 +124,7 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
       date_field: dateField || null,
       icon: icon || null,
       pinned,
+      ui_config: uiConfig,
     };
     try {
       if (existing) {
@@ -238,6 +256,75 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
               <input type="checkbox" checked={summable} onChange={(e) => setSummable(e.target.checked)} />
               Safe to add up (untick for ratings or scores)
             </label>
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-3">
+        <h2 className="text-lg">Display</h2>
+        <p className="text-sm text-muted-foreground">How entries show on this tracker's own page.</p>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="View">
+          {VIEW_TYPES.map((v) => {
+            const disabled = v === "chart" && !chartEligible;
+            return (
+              <button
+                key={v}
+                type="button"
+                role="radio"
+                aria-checked={view === v}
+                disabled={disabled}
+                title={disabled ? "Needs a summable amount field (set one under “How other apps and AI read it”)" : undefined}
+                onClick={() => setView(v)}
+                className={
+                  "px-3 py-1.5 rounded-md text-sm border " +
+                  (view === v ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground")
+                }
+              >
+                {VIEW_LABELS[v]}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Accent color">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={accent === ""}
+            title="Default"
+            onClick={() => setAccent("")}
+            className={"w-7 h-7 rounded-full border-2 bg-primary " + (accent === "" ? "border-foreground" : "border-transparent")}
+          />
+          {ACCENT_NAMES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              role="radio"
+              aria-checked={accent === name}
+              title={name}
+              onClick={() => setAccent(accent === name ? "" : name)}
+              style={{ backgroundColor: ACCENT_HEX[name] }}
+              className={"w-7 h-7 rounded-full border-2 " + (accent === name ? "border-foreground" : "border-transparent")}
+            />
+          ))}
+        </div>
+
+        {view === "table" && fields.length > 0 && (
+          <div className="grid gap-1">
+            <span className="text-sm">Table columns</span>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {fields.map((f) => (
+                <label key={f.key} className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={columns.includes(f.key)}
+                    onChange={(e) => setColumns((prev) => (e.target.checked ? [...prev, f.key] : prev.filter((k) => k !== f.key)))}
+                  />
+                  {f.label}
+                </label>
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">Leave none checked to show every field.</span>
           </div>
         )}
       </section>

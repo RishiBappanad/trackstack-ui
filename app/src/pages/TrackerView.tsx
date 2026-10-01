@@ -4,6 +4,8 @@ import { useTrackStackAuth } from "trackstack-ui";
 import { Pencil, Trash2, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import { customApi, formatValue, notifyPinnedTrackersChanged, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
+import { TrackerTable } from "../components/TrackerTable.js";
+import { TrackerChart } from "../components/TrackerChart.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -181,6 +183,8 @@ export function TrackerView() {
 
   if (!def) return error ? <p className="text-destructive text-sm">{error}</p> : null;
 
+  const editingEntry = entries.find((e) => e.id === editingId) ?? null;
+
   return (
     <div className="max-w-3xl">
       <div className="flex items-start justify-between mb-6 gap-4">
@@ -197,26 +201,45 @@ export function TrackerView() {
 
       {error && <div className="mb-4 bg-destructive/10 border border-destructive text-destructive text-sm rounded-md px-3 py-2">{error}</div>}
 
-      <EntryForm def={def} submitLabel="Add" onSubmit={create} />
+      {editingEntry ? (
+        <EntryForm def={def} initial={editingEntry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
+      ) : (
+        <EntryForm def={def} submitLabel="Add" onSubmit={create} />
+      )}
 
-      <div className="bg-card border border-border rounded-lg divide-y divide-border">
-        {entries.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">No entries yet.</p>}
-        {entries.map((entry) =>
-          editingId === entry.id ? (
-            <EntryForm key={entry.id} def={def} initial={entry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(entry.id, v)} />
-          ) : (
-            <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
-              <EntryRow def={def} entry={entry} />
-              <button onClick={() => setEditingId(entry.id)} className="text-muted-foreground hover:text-foreground flex-shrink-0" aria-label="Edit">
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button onClick={() => remove(entry.id)} className="text-muted-foreground hover:text-destructive flex-shrink-0" aria-label="Delete">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ),
-        )}
-      </div>
+      {renderView(def, entries, setEditingId, remove)}
+    </div>
+  );
+}
+
+/** Tier A (ui_config absent/"list") is the original card list; "table"/
+ * "chart" are Tier B, declarative config TrackStack itself renders --
+ * see APP_INTERFACE_SPEC.md §3 and trackstack-custom's UiConfig. Entries
+ * are already loaded for the list view, so table/chart reuse that same
+ * fetch rather than querying again. Editing happens in the top form slot
+ * (above), uniformly across all three views, rather than inline per row
+ * -- a table row swapped for a wrapping form reads as broken, and a
+ * chart has no row to swap in the first place. */
+function renderView(def: TrackerDefinition, entries: Entry[], onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>) {
+  const view = def.ui_config?.view ?? "list";
+
+  if (view === "table") return <TrackerTable def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} />;
+  if (view === "chart") return <TrackerChart def={def} entries={entries} />;
+
+  return (
+    <div className="bg-card border border-border rounded-lg divide-y divide-border">
+      {entries.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">No entries yet.</p>}
+      {entries.map((entry) => (
+        <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
+          <EntryRow def={def} entry={entry} />
+          <button onClick={() => onEdit(entry.id)} className="text-muted-foreground hover:text-foreground flex-shrink-0" aria-label="Edit">
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button onClick={() => onDelete(entry.id)} className="text-muted-foreground hover:text-destructive flex-shrink-0" aria-label="Delete">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

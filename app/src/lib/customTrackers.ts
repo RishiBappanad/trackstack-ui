@@ -37,7 +37,41 @@ export interface TrackerDefinition {
   date_field: string | null;
   icon: IconName | null;
   pinned: boolean;
+  ui_config: UiConfig | null;
 }
+
+// APP_INTERFACE_SPEC.md §3's Tier A/B UI contract, applied to a
+// trackstack-custom tracker: `ui_config: null` is Tier A (the default
+// generic list, what every tracker had before this); a populated one is
+// Tier B -- a constrained, TrackStack-rendered config, never executable
+// code. Mirrors trackstack-custom's definitions.ts exactly.
+export const VIEW_TYPES = ["list", "table", "chart"] as const;
+export type ViewType = (typeof VIEW_TYPES)[number];
+
+export const ACCENT_NAMES = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red"] as const;
+export type AccentName = (typeof ACCENT_NAMES)[number];
+
+export interface UiConfig {
+  view: ViewType;
+  accent: AccentName | null;
+  columns: string[] | null;
+}
+
+// The dataviz skill's validated 8-hue categorical palette (dark-mode
+// column, references/palette.md) -- this app is dark-theme-only (see
+// index.css), so there's no separate light variant to carry here. Fixed
+// order, CVD-safe adjacent contrast; never reassign a name to a
+// different hex or reorder the underlying set.
+export const ACCENT_HEX: Record<AccentName, string> = {
+  blue: "#3987e5",
+  orange: "#d95926",
+  aqua: "#199e70",
+  yellow: "#c98500",
+  magenta: "#d55181",
+  green: "#008300",
+  violet: "#9085e9",
+  red: "#e66767",
+};
 
 // Mirrors trackstack-custom's ICON_NAMES exactly (duplicated, not
 // imported -- CLAUDE.md Tenet #1: no shared code across repos). The
