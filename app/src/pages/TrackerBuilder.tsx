@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
-import { Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import {
   ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, FIELD_TYPE_LABELS, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
@@ -73,6 +73,23 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
 
   function addField() {
     setDrafts((prev) => [...prev, { key: "", label: "", type: "text", unit: "", optionsText: "", required: false, locked: false }]);
+  }
+
+  // Field order is just the drafts array's order -- it drives form layout
+  // and list/chart display order directly (table view's own `columns`
+  // already lets a tracker override order independently), so reordering
+  // here needs nothing on the backend: PATCH just sends `fields` in its
+  // new order, the same array it always sent.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  function moveDraft(from: number, to: number) {
+    if (to < 0 || to >= drafts.length || from === to) return;
+    setDrafts((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item!);
+      return next;
+    });
   }
 
   // A new field's key follows its label (until saved) so the person never
@@ -205,7 +222,35 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
         <h2 className="text-lg">Fields</h2>
         {drafts.length === 0 && <p className="text-sm text-muted-foreground">Add at least one field.</p>}
         {drafts.map((d, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2 bg-card border border-border rounded-lg p-3">
+          <div
+            key={i}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragIndex !== null) moveDraft(dragIndex, i);
+              setDragIndex(null);
+            }}
+            className={"flex flex-wrap items-center gap-2 bg-card border border-border rounded-lg p-3 " + (dragIndex === i ? "opacity-50" : "")}
+          >
+            <button
+              type="button"
+              draggable
+              onDragStart={() => setDragIndex(i)}
+              onDragEnd={() => setDragIndex(null)}
+              className="cursor-grab text-muted-foreground hover:text-foreground flex-shrink-0"
+              aria-label="Drag to reorder"
+              title="Drag to reorder"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <div className="flex flex-col flex-shrink-0">
+              <button type="button" onClick={() => moveDraft(i, i - 1)} disabled={i === 0} aria-label="Move up" className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:hover:text-muted-foreground">
+                <ChevronUp className="h-3 w-3" />
+              </button>
+              <button type="button" onClick={() => moveDraft(i, i + 1)} disabled={i === drafts.length - 1} aria-label="Move down" className="text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:hover:text-muted-foreground">
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </div>
             <input value={d.label} onChange={(e) => relabel(i, e.target.value)} placeholder="Field name" required className={inputClass + " flex-1 min-w-[140px]"} />
             <select
               value={d.type}
