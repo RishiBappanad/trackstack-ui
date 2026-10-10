@@ -4,7 +4,7 @@ import { useTrackStackAuth } from "trackstack-ui";
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import {
-  ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
+  ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, FIELD_TYPE_LABELS, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
   type AccentName, type FieldDef, type FieldType, type IconName, type TrackerDefinition, type ViewType,
 } from "../lib/customTrackers.js";
 
@@ -36,7 +36,7 @@ function fieldFromDraft(d: FieldDraft): FieldDef {
   const field: FieldDef = { key: d.key, label: d.label.trim(), type: d.type };
   if (d.required) field.required = true;
   if (d.type === "number" && d.unit.trim()) field.unit = d.unit.trim();
-  if (d.type === "select") field.options = d.optionsText.split(",").map((o) => o.trim()).filter(Boolean);
+  if (d.type === "select" || d.type === "multi_select") field.options = d.optionsText.split(",").map((o) => o.trim()).filter(Boolean);
   return field;
 }
 
@@ -215,11 +215,11 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
               title={d.locked ? "A saved field's type can't change" : "Field type"}
             >
               {FIELD_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>{FIELD_TYPE_LABELS[t]}</option>
               ))}
             </select>
             {d.type === "number" && <input value={d.unit} onChange={(e) => updateDraft(i, { unit: e.target.value })} placeholder="Unit (km, min…)" className={inputClass + " w-32"} />}
-            {d.type === "select" && (
+            {(d.type === "select" || d.type === "multi_select") && (
               <input value={d.optionsText} onChange={(e) => updateDraft(i, { optionsText: e.target.value })} placeholder="Options, comma separated" required className={inputClass + " flex-1 min-w-[160px]"} />
             )}
             <label className="flex items-center gap-1 text-xs text-muted-foreground">

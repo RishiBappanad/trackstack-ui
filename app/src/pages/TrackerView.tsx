@@ -3,7 +3,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { Pencil, Trash2, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { customApi, formatValue, notifyPinnedTrackersChanged, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
+import { customApi, formatValue, notifyPinnedTrackersChanged, RATING_MAX, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
 import { TrackerTable } from "../components/TrackerTable.js";
 import { TrackerChart } from "../components/TrackerChart.js";
 
@@ -11,35 +11,47 @@ const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
 const inputClass = "bg-secondary border border-border rounded-md px-3 py-2 text-sm";
 
-/** Form state is always strings/booleans (what inputs produce); `toValues`
- * converts to the typed payload the API wants. */
-type FormState = Record<string, string | boolean>;
+/** Form state is always strings/booleans/string-arrays (what inputs
+ * produce); `toValues` converts to the typed payload the API wants. A
+ * rating is kept as a string here too, same as "number" -- only the
+ * input widget differs, the string<->number conversion is identical. */
+type FormState = Record<string, string | boolean | string[]>;
 
 function initialState(fields: FieldDef[], values?: EntryValues): FormState {
   const state: FormState = {};
   for (const f of fields) {
     const v = values?.[f.key];
-    state[f.key] = f.type === "boolean" ? v === true : v === undefined ? "" : String(v);
+    if (f.type === "boolean") state[f.key] = v === true;
+    else if (f.type === "multi_select") state[f.key] = Array.isArray(v) ? v : [];
+    else state[f.key] = v === undefined ? "" : String(v);
   }
   return state;
 }
 
 /** Empty inputs are omitted on create and sent as null on edit, which is
- * how the API clears an optional field. */
+ * how the API clears an optional field -- multi_select's "empty" is a
+ * zero-length array rather than an empty string, same rule otherwise. */
 function toValues(fields: FieldDef[], state: FormState, editing: boolean): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const f of fields) {
     const raw = state[f.key];
-    if (f.type === "boolean") values[f.key] = raw === true;
-    else if (raw === "" || raw === undefined) {
+    if (f.type === "boolean") {
+      values[f.key] = raw === true;
+      continue;
+    }
+    const empty = f.type === "multi_select" ? !Array.isArray(raw) || raw.length === 0 : raw === "" || raw === undefined;
+    if (empty) {
       if (editing) values[f.key] = null;
-    } else values[f.key] = f.type === "number" ? Number(raw) : raw;
+      continue;
+    }
+    values[f.key] = f.type === "multi_select" ? raw : f.type === "number" || f.type === "rating" ? Number(raw) : raw;
   }
   return values;
 }
 
-function FieldInput({ field, value, onChange }: { field: FieldDef; value: string | boolean; onChange: (v: string | boolean) => void }) {
+function FieldInput({ field, value, onChange }: { field: FieldDef; value: string | boolean | string[]; onChange: (v: string | boolean | string[]) => void }) {
   const label = field.unit ? `${field.label} (${field.unit})` : field.label;
+
   if (field.type === "boolean") {
     return (
       <label className="flex items-center gap-2 text-sm">
@@ -47,7 +59,61 @@ function FieldInput({ field, value, onChange }: { field: FieldDef; value: string
       </label>
     );
   }
+
+  if (field.type === "rating") {
+    const current = Number(value) || 0;
+    return (
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+        {label}
+        <div className="flex gap-0.5" role="radiogroup" aria-label={label}>
+          {Array.from({ length: RATING_MAX }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={current === n}
+              title={`${n}`}
+              onClick={() => onChange(current === n ? "" : String(n))}
+              className={"text-lg leading-none " + (n <= current ? "text-foreground" : "text-muted-foreground/40 hover:text-muted-foreground")}
+            >
+              {n <= current ? "★" : "☆"}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (field.type === "multi_select") {
+    const selected = Array.isArray(value) ? value : [];
+    return (
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground min-w-[160px]">
+        {label}
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {(field.options ?? []).map((o) => (
+            <label key={o} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={selected.includes(o)}
+                onChange={(e) => onChange(e.target.checked ? [...selected, o] : selected.filter((s) => s !== o))}
+              />
+              {o}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const common = { required: field.required, title: label, className: inputClass };
+  if (field.type === "long_text") {
+    return (
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground min-w-[200px] flex-1 basis-full">
+        {label}
+        <textarea {...common} rows={3} value={String(value)} onChange={(e) => onChange(e.target.value)} />
+      </label>
+    );
+  }
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground min-w-[140px] flex-1">
       {label}

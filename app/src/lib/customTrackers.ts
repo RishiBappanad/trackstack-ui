@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
-import type { LucideIcon } from "lucide-react";
-import {
-  Activity, BarChart3, Book, BookOpen, Calendar, Camera, Clipboard, Coffee,
-  Dumbbell, Flame, Gauge, Heart, LayoutDashboard, ListChecks, Moon, Music,
-  PiggyBank, Plane, Salad, Smile, Star, Sun, Target, Timer,
-  TrendingUp, Trophy, Utensils, Wallet, Zap,
-} from "lucide-react";
 import { apiFetch } from "./api.js";
+
+// Icons and pinned-trackers fetching moved into the shared trackstack-ui
+// library (2026-10-02) -- any TrackStack app's AppSwitcher needs these to
+// render a pinned tracker, not just Home's own builder pages. Re-exported
+// here so every existing import in this app (TrackerBuilder.tsx etc.)
+// keeps working unchanged.
+export { ICON_NAMES, ICON_COMPONENTS, usePinnedTrackers, notifyPinnedTrackersChanged } from "trackstack-ui";
+export type { IconName, PinnedTracker } from "trackstack-ui";
+import type { IconName } from "trackstack-ui";
 
 /** Mirrors trackstack-custom's definitions.ts -- the wire format of a
  * user-made tracker. Kept as plain types (no shared code across repos,
  * CLAUDE.md Tenet #1); the backend is the source of truth for validation. */
-export const FIELD_TYPES = ["text", "number", "boolean", "date", "select"] as const;
+export const FIELD_TYPES = ["text", "long_text", "number", "boolean", "date", "select", "multi_select", "rating"] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
+
+export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
+  text: "Text", long_text: "Long text", number: "Number", boolean: "Yes/No",
+  date: "Date", select: "Choice", multi_select: "Tags", rating: "Rating",
+};
+
+export const RATING_MAX = 5;
 
 export interface FieldDef {
   key: string;
@@ -73,34 +81,7 @@ export const ACCENT_HEX: Record<AccentName, string> = {
   red: "#e66767",
 };
 
-// Mirrors trackstack-custom's ICON_NAMES exactly (duplicated, not
-// imported -- CLAUDE.md Tenet #1: no shared code across repos). The
-// backend validates a tracker's icon against this same list server-side;
-// keep both in sync if it ever changes.
-export const ICON_NAMES = [
-  "Activity", "BarChart3", "Book", "BookOpen", "Calendar", "Camera", "Clipboard", "Coffee",
-  "Dumbbell", "Flame", "Gauge", "Heart", "LayoutDashboard", "ListChecks", "Moon", "Music",
-  "PiggyBank", "Plane", "Salad", "Smile", "Star", "Sun", "Target", "Timer",
-  "TrendingUp", "Trophy", "Utensils", "Wallet", "Zap",
-] as const;
-export type IconName = (typeof ICON_NAMES)[number];
-
-export const ICON_COMPONENTS: Record<IconName, LucideIcon> = {
-  Activity, BarChart3, Book, BookOpen, Calendar, Camera, Clipboard, Coffee,
-  Dumbbell, Flame, Gauge, Heart, LayoutDashboard, ListChecks, Moon, Music,
-  PiggyBank, Plane, Salad, Smile, Star, Sun, Target, Timer,
-  TrendingUp, Trophy, Utensils, Wallet, Zap,
-};
-
-/** The shape GET /trackers/pinned returns -- just enough to render a
- * sidebar link, not a full definition. */
-export interface PinnedTracker {
-  slug: string;
-  name: string;
-  icon: IconName;
-}
-
-export type EntryValues = Record<string, string | number | boolean>;
+export type EntryValues = Record<string, string | number | boolean | string[]>;
 
 export interface Entry {
   id: string;
@@ -136,47 +117,16 @@ export function uniqueSlug(text: string, taken: string[]): string {
   }
 }
 
-// The Shell (App.tsx) renders pinned trackers in its sidebar on every
-// page, but only the tracker builder/view pages know when pinning
-// changes -- a plain window event is the lightest way to tell Shell to
-// refetch without threading a refresh callback through every route or
-// standing up a context provider for one small list.
-const PINNED_CHANGED_EVENT = "trackstack:pinned-trackers-changed";
-
-export function notifyPinnedTrackersChanged(): void {
-  window.dispatchEvent(new Event(PINNED_CHANGED_EVENT));
-}
-
-/** The caller's pinned trackers, refetched on token change and whenever
- * notifyPinnedTrackersChanged() fires elsewhere in the app. */
-export function usePinnedTrackers(token: string | null): PinnedTracker[] {
-  const [pinned, setPinned] = useState<PinnedTracker[]>([]);
-
-  const load = useCallback(async () => {
-    if (!CUSTOM_BASE_URL || !token) return;
-    try {
-      setPinned((await customApi("/trackers/pinned", token)) as PinnedTracker[]);
-    } catch {
-      // Non-fatal -- the rest of the sidebar still works without this.
-    }
-  }, [token]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    window.addEventListener(PINNED_CHANGED_EVENT, load);
-    return () => window.removeEventListener(PINNED_CHANGED_EVENT, load);
-  }, [load]);
-
-  return pinned;
-}
-
 /** How an entry's values read as one line of text in a list. */
-export function formatValue(field: FieldDef, value: string | number | boolean | undefined): string {
+export function formatValue(field: FieldDef, value: string | number | boolean | string[] | undefined): string {
   if (value === undefined) return "";
   if (field.type === "boolean") return value ? "Yes" : "No";
   if (field.type === "number") return field.unit ? `${value} ${field.unit}` : String(value);
+  if (field.type === "multi_select") return Array.isArray(value) ? value.join(", ") : "";
+  if (field.type === "rating") return "★".repeat(Number(value)) + "☆".repeat(RATING_MAX - Number(value));
+  if (field.type === "long_text") {
+    const text = String(value);
+    return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  }
   return String(value);
 }

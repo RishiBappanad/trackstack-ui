@@ -22,7 +22,12 @@ export type {
 export { useCurrentUser } from "./hooks/useCurrentUser.js";
 export type { UseCurrentUserResult } from "./hooks/useCurrentUser.js";
 
+export { usePinnedTrackers, notifyPinnedTrackersChanged } from "./hooks/usePinnedTrackers.js";
+export type { PinnedTracker } from "./hooks/usePinnedTrackers.js";
+
 export { cn } from "./lib/cn.js";
 export { getHomeAppUrl, redirectToLogin } from "./lib/redirectToLogin.js";
+export { ICON_NAMES, ICON_COMPONENTS } from "./lib/trackerIcons.js";
+export type { IconName } from "./lib/trackerIcons.js";
 
 export type { TrackStackApp, TrackStackAccount } from "./types.js";
