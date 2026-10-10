@@ -268,9 +268,18 @@ export function TrackerView() {
       {error && <div className="mb-4 bg-destructive/10 border border-destructive text-destructive text-sm rounded-md px-3 py-2">{error}</div>}
 
       {editingEntry ? (
-        <EntryForm def={def} initial={editingEntry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
+        // `key` forces a fresh mount per entity being edited -- EntryForm's
+        // state is seeded once, in useState's lazy initializer, which only
+        // ever runs on mount; without a key tied to *which* entry this is,
+        // switching from "create" to "edit" (or from editing one entry to
+        // another) re-rendered the SAME mounted instance with a new
+        // `initial` prop that nothing ever re-read, leaving every field
+        // blank instead of pre-filled. Found 2026-10-10 (table view's Edit
+        // visibly did nothing -- same bug in every view, table just made
+        // it obvious since list/chart hadn't been exercised as hard).
+        <EntryForm key={editingEntry.id} def={def} initial={editingEntry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
       ) : (
-        <EntryForm def={def} submitLabel="Add" onSubmit={create} />
+        <EntryForm key="__create__" def={def} submitLabel="Add" onSubmit={create} />
       )}
 
       {renderView(def, entries, setEditingId, remove)}
