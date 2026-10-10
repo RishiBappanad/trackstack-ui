@@ -6,15 +6,16 @@ import { apiFetch, ApiError } from "../lib/api.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
-// There is no central "sync everything" endpoint anywhere in TrackStack
-// today (checked: trackstack-gateway is a pure path-prefix proxy, no
-// /actions or fan-out route of its own; workspace-notes/
-// ACTIONS_CONTRACT_SPEC.md's POST /actions/{name}/run contract is spec'd
-// but only finance-tracker has ever implemented one, for CPI, not for
-// this) -- this list is the fan-out itself, one entry per tracker that
-// has a real sync endpoint to call. todo-tracker isn't here: it's a
-// passive sync TARGET (other trackers' actions push into it), it has
-// nothing of its own to trigger.
+// trackstack-gateway also has its own POST /sync/all (fire-and-forget,
+// built for a client with a short execution budget -- see
+// workspace-notes/PLATFORM_GOTCHAS.md). This component intentionally
+// doesn't call that instead: a browser tab has no comparable time limit,
+// and waiting synchronously here means it can show live per-tracker
+// progress, which /sync/all's fire-and-forget response can't provide.
+// This list is the fan-out itself, one entry per tracker that has a real
+// sync endpoint to call. todo-tracker isn't here: it's a passive sync
+// TARGET (other trackers' actions push into it), it has nothing of its
+// own to trigger.
 const SYNC_SOURCES = [
   { id: "finance", label: "Finance Tracker", apiBase: import.meta.env.VITE_FINANCE_API_BASE ?? "", path: "/api/transactions/sync" },
   { id: "nutrition", label: "Nutrition Insights", apiBase: import.meta.env.VITE_NUTRITION_API_BASE ?? "", path: "/sync/all" },
