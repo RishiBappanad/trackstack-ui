@@ -8,6 +8,7 @@ import {
   type AccentName, type FieldDef, type FieldType, type IconName, type TrackerDefinition, type ViewType,
 } from "../lib/customTrackers.js";
 import { FieldInput } from "../components/FieldInput.js";
+import { TRACKER_TEMPLATES, type TrackerTemplate } from "../lib/trackerTemplates.js";
 
 const VIEW_LABELS: Record<ViewType, string> = { list: "List", table: "Table", chart: "Chart" };
 
@@ -29,8 +30,11 @@ interface FieldDraft {
 
 const inputClass = "bg-secondary border border-border rounded-md px-3 py-2 text-sm";
 
-function draftFromField(f: FieldDef): FieldDraft {
-  return { key: f.key, label: f.label, type: f.type, unit: f.unit ?? "", optionsText: (f.options ?? []).join(", "), required: !!f.required, locked: true };
+/** `locked: false` for a template's fields -- unlike a saved field, a
+ * template's is just a prefilled starting point, as editable/removable
+ * as one typed in by hand (nothing's actually saved yet). */
+function draftFromField(f: FieldDef, locked = true): FieldDraft {
+  return { key: f.key, label: f.label, type: f.type, unit: f.unit ?? "", optionsText: (f.options ?? []).join(", "), required: !!f.required, locked };
 }
 
 function fieldFromDraft(d: FieldDraft): FieldDef {
@@ -42,25 +46,30 @@ function fieldFromDraft(d: FieldDraft): FieldDef {
 }
 
 /** One form for both creating a tracker and editing an existing one (the
- * `existing` prop), the same shape the Todos page uses for its item form. */
-function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSaved: (slug: string) => void }) {
+ * `existing` prop), the same shape the Todos page uses for its item form.
+ * `template` (create-only -- NewTracker never passes both) seeds the same
+ * initial state `existing` would, just from a starter template instead of
+ * a saved tracker. */
+function TrackerForm({ existing, template, onSaved }: { existing?: TrackerDefinition; template?: TrackerTemplate; onSaved: (slug: string) => void }) {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
-  const [name, setName] = useState(existing?.name ?? "");
-  const [slug, setSlug] = useState(existing?.slug ?? "");
+  const [name, setName] = useState(existing?.name ?? template?.name ?? "");
+  const [slug, setSlug] = useState(existing?.slug ?? (template ? slugify(template.name) : ""));
   const [slugTouched, setSlugTouched] = useState(false);
   const [description, setDescription] = useState(existing?.description ?? "");
   const [background, setBackground] = useState(existing?.background ?? "");
-  const [drafts, setDrafts] = useState<FieldDraft[]>(existing ? existing.fields.map(draftFromField) : []);
-  const [amountField, setAmountField] = useState(existing?.amount_field ?? "");
-  const [amountMeaning, setAmountMeaning] = useState(existing?.amount_meaning ?? "");
-  const [summable, setSummable] = useState(existing?.summable ?? true);
-  const [categoryField, setCategoryField] = useState(existing?.category_field ?? "");
-  const [labelField, setLabelField] = useState(existing?.label_field ?? "");
-  const [dateField, setDateField] = useState(existing?.date_field ?? "");
-  const [icon, setIcon] = useState<IconName | "">(existing?.icon ?? "");
+  const [drafts, setDrafts] = useState<FieldDraft[]>(
+    existing ? existing.fields.map((f) => draftFromField(f)) : template ? template.fields.map((f) => draftFromField(f, false)) : [],
+  );
+  const [amountField, setAmountField] = useState(existing?.amount_field ?? template?.amountField ?? "");
+  const [amountMeaning, setAmountMeaning] = useState(existing?.amount_meaning ?? template?.amountMeaning ?? "");
+  const [summable, setSummable] = useState(existing?.summable ?? template?.summable ?? true);
+  const [categoryField, setCategoryField] = useState(existing?.category_field ?? template?.categoryField ?? "");
+  const [labelField, setLabelField] = useState(existing?.label_field ?? template?.labelField ?? "");
+  const [dateField, setDateField] = useState(existing?.date_field ?? template?.dateField ?? "");
+  const [icon, setIcon] = useState<IconName | "">(existing?.icon ?? template?.icon ?? "");
   const [pinned, setPinned] = useState(existing?.pinned ?? false);
-  const [view, setView] = useState<ViewType>(existing?.ui_config?.view ?? "list");
-  const [accent, setAccent] = useState<AccentName | "">(existing?.ui_config?.accent ?? "");
+  const [view, setView] = useState<ViewType>(existing?.ui_config?.view ?? template?.view ?? "list");
+  const [accent, setAccent] = useState<AccentName | "">(existing?.ui_config?.accent ?? template?.accent ?? "");
   const [columns, setColumns] = useState<string[]>(existing?.ui_config?.columns ?? []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -464,12 +473,67 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
   );
 }
 
+/** A starter template just prefills TrackerForm's initial state (see
+ * `template` above) -- never submitted on its own, so "Start from
+ * scratch" and picking a template then clicking back both reduce to the
+ * exact same blank/prefilled TrackerForm mount, nothing template-specific
+ * to unwind either way. */
+function TemplatePicker({ onPick }: { onPick: (template: TrackerTemplate | null) => void }) {
+  return (
+    <div className="grid gap-3">
+      <p className="text-sm text-muted-foreground">Start from a template, or build one from scratch.</p>
+      <div className="grid sm:grid-cols-2 gap-3 max-w-2xl">
+        {TRACKER_TEMPLATES.map((t) => {
+          const Icon = ICON_COMPONENTS[t.icon];
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => onPick(t)}
+              className="flex items-start gap-3 text-left bg-card border border-border rounded-lg p-4 hover:border-foreground/30"
+            >
+              <Icon className="h-5 w-5 flex-shrink-0 mt-0.5 text-muted-foreground" />
+              <div>
+                <div className="text-sm font-medium">{t.label}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{t.description}</div>
+              </div>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => onPick(null)}
+          className="flex items-center justify-center text-sm text-muted-foreground hover:text-foreground bg-card border border-dashed border-border rounded-lg p-4"
+        >
+          Start from scratch
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function NewTracker() {
   const [, navigate] = useLocation();
+  const [template, setTemplate] = useState<TrackerTemplate | null | undefined>(undefined);
+
+  if (template === undefined) {
+    return (
+      <div>
+        <h1 className="text-2xl mb-6">New tracker</h1>
+        <TemplatePicker onPick={setTemplate} />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <h1 className="text-2xl mb-6">New tracker</h1>
-      <TrackerForm onSaved={(slug) => navigate(`/trackers/${slug}`)} />
+      <div className="flex items-center justify-between mb-6 max-w-2xl">
+        <h1 className="text-2xl">New tracker</h1>
+        <button type="button" onClick={() => setTemplate(undefined)} className="text-sm text-muted-foreground hover:text-foreground">
+          Choose a different template
+        </button>
+      </div>
+      <TrackerForm template={template ?? undefined} onSaved={(slug) => navigate(`/trackers/${slug}`)} />
     </div>
   );
 }
