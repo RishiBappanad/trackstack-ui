@@ -44,7 +44,7 @@ function formatTick(n: number): string {
 const CHART_HEIGHT = 200;
 const MAX_BAR_WIDTH = 24;
 
-export function TrackerChart({ def, entries }: { def: TrackerDefinition; entries: Entry[] }) {
+export function TrackerChart({ def, entries, emptyMessage = "No entries yet." }: { def: TrackerDefinition; entries: Entry[]; emptyMessage?: string }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const tooltipId = useId();
   const amountField = def.amount_field;
@@ -56,7 +56,7 @@ export function TrackerChart({ def, entries }: { def: TrackerDefinition; entries
 
   const bars = groupByCategory(entries, def.category_field, amountField);
   if (bars.length === 0) {
-    return <div className="bg-card border border-border rounded-lg p-6 text-sm text-muted-foreground text-center">No entries yet.</div>;
+    return <div className="bg-card border border-border rounded-lg p-6 text-sm text-muted-foreground text-center">{emptyMessage}</div>;
   }
 
   const ticks = niceTicks(Math.max(...bars.map((b) => b.total)));

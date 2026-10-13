@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { useTrackStackAuth } from "trackstack-ui";
+import { useTrackStackAuth, QualitativeFieldFilter } from "trackstack-ui";
 import { Pencil, Trash2, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import { customApi, formatValue, notifyPinnedTrackersChanged, RATING_MAX, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
 import { TrackerTable } from "../components/TrackerTable.js";
 import { TrackerChart } from "../components/TrackerChart.js";
+import { NumberRangeFilter, type NumberRange } from "../components/NumberRangeFilter.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -173,6 +174,38 @@ function EntryForm({ def, initial, submitLabel, onSubmit, onCancel }: {
   );
 }
 
+const QUAL_TYPES: FieldDef["type"][] = ["select", "multi_select", "boolean", "rating"];
+
+/** The fixed vocabulary a qualitative filter's checkboxes offer for a
+ * given field -- select/multi_select already have one (`options`);
+ * boolean and rating don't carry a field-level list, so one is
+ * synthesized here instead of asking the tracker definition for it. */
+function qualOptions(f: FieldDef): string[] {
+  if (f.type === "boolean") return ["Yes", "No"];
+  if (f.type === "rating") return Array.from({ length: RATING_MAX }, (_, i) => String(i + 1));
+  return f.options ?? [];
+}
+
+/** Normalizes one entry's value for field `f` to the same string
+ * vocabulary qualOptions() uses, so a filter's selected Set<string> can
+ * be compared directly regardless of the field's real value type. */
+function qualValues(f: FieldDef, raw: string | number | boolean | string[] | undefined): string[] {
+  if (raw === undefined) return [];
+  if (f.type === "boolean") return [raw ? "Yes" : "No"];
+  if (f.type === "multi_select") return Array.isArray(raw) ? raw : [];
+  return [String(raw)];
+}
+
+/** The slider's travel range for a number field, derived from whatever
+ * values are actually present across these entries -- null (no filter
+ * control at all for this field) when none have one yet, since there's
+ * nothing meaningful to narrow. */
+function numberBounds(entries: Entry[], key: string): { min: number; max: number } | null {
+  const values = entries.map((e) => e.values[key]).filter((v): v is number => typeof v === "number");
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
 function EntryRow({ def, entry }: { def: TrackerDefinition; entry: Entry }) {
   const titleField = def.fields.find((f) => f.key === def.label_field);
   const title = titleField ? String(entry.values[titleField.key] ?? "") : "";
@@ -201,6 +234,17 @@ export function TrackerView() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Filtering on the actual data, "like there is in the other trackers"
+  // (Todos' QualitativeFieldFilter) -- reused as-is for any field whose
+  // value is drawn from a small fixed set (select/multi_select/boolean/
+  // rating), and a slider+manual-input range filter (NumberRangeFilter)
+  // for continuous number fields. Applies across every view, not just
+  // table: filtering entries once, upstream of renderView, means list and
+  // chart both narrow too (a chart of only the filtered rows is exactly
+  // what "filter then chart" should mean), rather than reimplementing
+  // filtering per view.
+  const [qualFilters, setQualFilters] = useState<Record<string, Set<string>>>({});
+  const [numFilters, setNumFilters] = useState<Record<string, NumberRange>>({});
 
   const load = useCallback(async () => {
     try {
@@ -251,6 +295,26 @@ export function TrackerView() {
 
   const editingEntry = entries.find((e) => e.id === editingId) ?? null;
 
+  const qualFields = def.fields.filter((f) => QUAL_TYPES.includes(f.type));
+  const numFields = def.fields.filter((f) => f.type === "number");
+
+  const filteredEntries = entries.filter((entry) => {
+    for (const f of qualFields) {
+      const selected = qualFilters[f.key];
+      if (selected?.size && !qualValues(f, entry.values[f.key]).some((v) => selected.has(v))) return false;
+    }
+    for (const f of numFields) {
+      const range = numFilters[f.key];
+      if (!range || (range.min === null && range.max === null)) continue;
+      const v = entry.values[f.key];
+      if (typeof v !== "number") return false;
+      if (range.min !== null && v < range.min) return false;
+      if (range.max !== null && v > range.max) return false;
+    }
+    return true;
+  });
+  const emptyMessage = entries.length > 0 && filteredEntries.length === 0 ? "No entries match the current filters." : "No entries yet.";
+
   return (
     <div className="max-w-3xl">
       <div className="flex items-start justify-between mb-6 gap-4">
@@ -282,7 +346,44 @@ export function TrackerView() {
         <EntryForm key="__create__" def={def} submitLabel="Add" onSubmit={create} />
       )}
 
-      {renderView(def, entries, setEditingId, remove)}
+      {(qualFields.length > 0 || numFields.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {qualFields.map((f) => (
+            <QualitativeFieldFilter
+              key={f.key}
+              label={f.label}
+              options={qualOptions(f)}
+              selected={qualFilters[f.key] ?? new Set()}
+              onToggle={(value) =>
+                setQualFilters((prev) => {
+                  const next = new Set(prev[f.key] ?? []);
+                  if (next.has(value)) next.delete(value);
+                  else next.add(value);
+                  return { ...prev, [f.key]: next };
+                })
+              }
+              onClear={() => setQualFilters((prev) => ({ ...prev, [f.key]: new Set() }))}
+            />
+          ))}
+          {numFields.map((f) => {
+            const bounds = numberBounds(entries, f.key);
+            if (!bounds) return null; // nothing logged for this field yet -- nothing to filter
+            return (
+              <NumberRangeFilter
+                key={f.key}
+                label={f.label}
+                unit={f.unit}
+                bounds={bounds}
+                value={numFilters[f.key] ?? { min: null, max: null }}
+                onChange={(value) => setNumFilters((prev) => ({ ...prev, [f.key]: value }))}
+                onClear={() => setNumFilters((prev) => ({ ...prev, [f.key]: { min: null, max: null } }))}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {renderView(def, filteredEntries, setEditingId, remove, emptyMessage)}
     </div>
   );
 }
@@ -295,15 +396,15 @@ export function TrackerView() {
  * (above), uniformly across all three views, rather than inline per row
  * -- a table row swapped for a wrapping form reads as broken, and a
  * chart has no row to swap in the first place. */
-function renderView(def: TrackerDefinition, entries: Entry[], onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>) {
+function renderView(def: TrackerDefinition, entries: Entry[], onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
   const view = def.ui_config?.view ?? "list";
 
-  if (view === "table") return <TrackerTable def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} />;
-  if (view === "chart") return <TrackerChart def={def} entries={entries} />;
+  if (view === "table") return <TrackerTable def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  if (view === "chart") return <TrackerChart def={def} entries={entries} emptyMessage={emptyMessage} />;
 
   return (
     <div className="bg-card border border-border rounded-lg divide-y divide-border">
-      {entries.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">No entries yet.</p>}
+      {entries.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">{emptyMessage}</p>}
       {entries.map((entry) => (
         <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
           <EntryRow def={def} entry={entry} />

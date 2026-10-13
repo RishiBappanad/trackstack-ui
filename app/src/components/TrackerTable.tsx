@@ -12,6 +12,17 @@ import { formatValue, type Entry, type FieldDef, type TrackerDefinition } from "
 // naturally resets if a tracker is deleted and a new one reuses the slug.
 const COLUMN_PREF_PREFIX = "trackstack:table-columns:";
 
+// A synthetic column key for the entry's occurred_at (every entry has
+// one, regardless of whether this tracker even has a date field) -- not
+// a real field, so it's carried alongside the real ones in the SAME
+// picker/preference rather than being a second, separate toggle. Default
+// state keeps today's behavior (always shown) until a viewer actively
+// hides it, which is the point: a tracker with its own date field
+// already shows that via the ordinary column picker, so forcing
+// "Occurred" on with no way to turn it off was pure redundancy for that
+// case -- see this component's own git history for the bug report.
+const OCCURRED_KEY = "__occurred__";
+
 function loadColumnPref(slug: string): string[] | null {
   try {
     const raw = localStorage.getItem(COLUMN_PREF_PREFIX + slug);
@@ -50,14 +61,15 @@ function clearColumnPref(slug: string): void {
  * time choice and the viewing-time choice are deliberately two different
  * things, not one setting with two editors. */
 export function TrackerTable({
-  def, entries, onEdit, onDelete,
+  def, entries, onEdit, onDelete, emptyMessage = "No entries yet.",
 }: {
   def: TrackerDefinition;
   entries: Entry[];
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  emptyMessage?: string;
 }) {
-  const defaultKeys = def.ui_config?.columns?.length ? def.ui_config.columns : def.fields.map((f) => f.key);
+  const defaultKeys = [...(def.ui_config?.columns?.length ? def.ui_config.columns : def.fields.map((f) => f.key)), OCCURRED_KEY];
   const [visibleKeys, setVisibleKeys] = useState<string[]>(() => loadColumnPref(def.slug) ?? defaultKeys);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -74,9 +86,10 @@ export function TrackerTable({
 
   // A field removed (or a tracker swapped out under the same slug) should
   // drop from a saved preference rather than silently matching nothing --
-  // re-derives from the CURRENT field list whenever it changes.
+  // re-derives from the CURRENT field list whenever it changes. OCCURRED_KEY
+  // is never a real field, so it's exempted rather than stripped here.
   useEffect(() => {
-    setVisibleKeys((prev) => prev.filter((k) => def.fields.some((f) => f.key === k)));
+    setVisibleKeys((prev) => prev.filter((k) => k === OCCURRED_KEY || def.fields.some((f) => f.key === k)));
   }, [def.fields]);
 
   function toggle(key: string) {
@@ -91,6 +104,8 @@ export function TrackerTable({
     clearColumnPref(def.slug);
     setVisibleKeys(defaultKeys);
   }
+
+  const showOccurred = visibleKeys.includes(OCCURRED_KEY);
 
   // Render order follows the tracker's own field-definition order, not
   // defaultKeys -- defaultKeys only seeds which columns start checked.
@@ -120,6 +135,10 @@ export function TrackerTable({
                 {f.label}
               </label>
             ))}
+            <label className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-secondary rounded-md cursor-pointer border-t border-border mt-1 pt-2">
+              <input type="checkbox" checked={showOccurred} onChange={() => toggle(OCCURRED_KEY)} />
+              Occurred
+            </label>
             {hasOverride && (
               <button type="button" onClick={resetToDefault} className="w-full text-left px-2 py-1 mt-1 text-xs text-muted-foreground hover:text-foreground border-t border-border">
                 Reset to tracker default
@@ -135,14 +154,14 @@ export function TrackerTable({
               {columns.map((f) => (
                 <th key={f.key} className="text-left font-medium px-3 py-2 whitespace-nowrap">{f.label}</th>
               ))}
-              <th className="text-left font-medium px-3 py-2 whitespace-nowrap">Occurred</th>
+              {showOccurred && <th className="text-left font-medium px-3 py-2 whitespace-nowrap">Occurred</th>}
               <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 && (
               <tr>
-                <td colSpan={columns.length + 2} className="px-3 py-6 text-center text-muted-foreground">No entries yet.</td>
+                <td colSpan={columns.length + (showOccurred ? 1 : 0) + 1} className="px-3 py-6 text-center text-muted-foreground">{emptyMessage}</td>
               </tr>
             )}
             {entries.map((entry) => (
@@ -152,7 +171,7 @@ export function TrackerTable({
                     {formatValue(f, entry.values[f.key])}
                   </td>
                 ))}
-                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground font-mono">{new Date(entry.occurred_at).toLocaleDateString()}</td>
+                {showOccurred && <td className="px-3 py-2 whitespace-nowrap text-muted-foreground font-mono">{new Date(entry.occurred_at).toLocaleDateString()}</td>}
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button onClick={() => onEdit(entry.id)} className="text-muted-foreground hover:text-foreground px-1">Edit</button>
                   <button onClick={() => onDelete(entry.id)} className="text-muted-foreground hover:text-destructive px-1">Delete</button>
