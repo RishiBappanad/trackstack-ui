@@ -7,6 +7,7 @@ import {
   ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, FIELD_TYPE_LABELS, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
   type AccentName, type FieldDef, type FieldType, type IconName, type TrackerDefinition, type ViewType,
 } from "../lib/customTrackers.js";
+import { FieldInput } from "../components/FieldInput.js";
 
 const VIEW_LABELS: Record<ViewType, string> = { list: "List", table: "Table", chart: "Chart" };
 
@@ -66,6 +67,22 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
 
   const fields = drafts.map(fieldFromDraft);
   const ofType = (...types: FieldType[]) => fields.filter((f) => types.includes(f.type) && f.label);
+
+  // Live preview of the entry form -- reuses FieldInput, the same
+  // component the real "Add entry" form renders, so this is a faithful
+  // 1:1 preview rather than a second guess at the real UI. Keyed off the
+  // CURRENT draft (not a saved field list), so editing a label, type, or
+  // options updates it immediately. Left untouched (no sync effect) when
+  // a field is added/renamed/removed: previewValue() just falls back to
+  // a type-appropriate default for any key it hasn't seen state for yet,
+  // and a stale entry for a renamed/removed key is simply never read
+  // again -- no cleanup needed.
+  const [previewState, setPreviewState] = useState<Record<string, string | boolean | string[]>>({});
+  function previewValue(f: FieldDef): string | boolean | string[] {
+    const v = previewState[f.key];
+    if (v !== undefined) return v;
+    return f.type === "boolean" ? false : f.type === "multi_select" ? [] : "";
+  }
 
   function updateDraft(index: number, patch: Partial<FieldDraft>) {
     setDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
@@ -282,6 +299,25 @@ function TrackerForm({ existing, onSaved }: { existing?: TrackerDefinition; onSa
         </button>
         {existing && <p className="text-xs text-muted-foreground">Saved fields can be renamed but not removed or retyped — existing entries already use them.</p>}
       </section>
+
+      {fields.length > 0 && (
+        <section className="grid gap-2">
+          <h2 className="text-lg">Preview</h2>
+          <p className="text-sm text-muted-foreground">What adding an entry will look like. Updates live as you edit fields above.</p>
+          <div className="flex flex-wrap items-end gap-2 bg-card border border-border rounded-lg p-4">
+            {fields.map((f, i) => (
+              // Keyed by draft position, not f.key -- a newly added,
+              // not-yet-labeled field has an empty key (same as any other
+              // blank one) until it's given a label, so f.key alone isn't
+              // unique yet.
+              <FieldInput key={i} field={f} value={previewValue(f)} onChange={(v) => setPreviewState((s) => ({ ...s, [f.key]: v }))} />
+            ))}
+            <button type="button" disabled title="Preview only — save the tracker to actually add entries" className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium opacity-50 cursor-not-allowed">
+              Add
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="grid gap-3">
         <h2 className="text-lg">How other apps and AI read it</h2>
