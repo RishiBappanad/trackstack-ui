@@ -3,12 +3,14 @@ import { Route, Switch, Link, useLocation } from "wouter";
 import { useTrackStackAuth, useCurrentUser, useAppRegistry, AppSwitcher, MobileAppSwitcher } from "trackstack-ui";
 import type { TrackStackApp, AppSwitcherExtraItem } from "trackstack-ui";
 import { usePinnedTrackers, ICON_COMPONENTS, CUSTOM_BASE_URL } from "./lib/customTrackers.js";
+import { applyTheme } from "./lib/theme.js";
 import { Login } from "./components/Login.js";
 import { Home } from "./pages/Home.js";
 import { Todos } from "./pages/Todos.js";
 import { Calendar } from "./pages/Calendar.js";
 import { Goals } from "./pages/Goals.js";
 import { Tokens } from "./pages/Tokens.js";
+import { Appearance } from "./pages/Appearance.js";
 import { Trackers } from "./pages/Trackers.js";
 import { NewTracker, EditTracker } from "./pages/TrackerBuilder.js";
 import { TrackerView } from "./pages/TrackerView.js";
@@ -56,6 +58,18 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const { user } = useCurrentUser(AUTH_BASE_URL, token);
   const [location] = useLocation();
+
+  // Applies as soon as the account loads (and again if it's refetched
+  // with a different theme -- e.g. after Appearance's own save), so the
+  // very first paint after login already reflects a saved choice rather
+  // than flashing the hardcoded default first. null/null (never
+  // customized) resolves to that same hardcoded default inside
+  // applyTheme, so this is a no-op for every account that hasn't visited
+  // Appearance.
+  useEffect(() => {
+    if (user) applyTheme(user.theme.hue, user.theme.backgroundLightness);
+  }, [user]);
+
   const pinnedTrackers = usePinnedTrackers(CUSTOM_BASE_URL, token);
   const extraItems: AppSwitcherExtraItem[] = pinnedTrackers.map((t) => ({
     id: `custom_${t.slug}`,
@@ -77,6 +91,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             <NavLink href="/calendar">Calendar</NavLink>
             <NavLink href="/goals">Goals</NavLink>
             <NavLink href="/trackers">Trackers</NavLink>
+            <NavLink href="/appearance">Appearance</NavLink>
             <NavLink href="/tokens">Developer</NavLink>
           </nav>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -97,6 +112,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             <Route path="/trackers/:slug/edit" component={EditTracker} />
             <Route path="/trackers/:slug" component={TrackerView} />
             <Route path="/tokens" component={Tokens} />
+            <Route path="/appearance" component={Appearance} />
             <Route>
               <p className="text-muted-foreground">Page not found.</p>
             </Route>
