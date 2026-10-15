@@ -5,10 +5,44 @@ import { ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import {
   ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, FIELD_TYPE_LABELS, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
-  type AccentName, type FieldDef, type FieldType, type IconName, type TrackerDefinition, type ViewType,
+  type AccentName, type Entry, type EntryValues, type FieldDef, type FieldType, type IconName, type TrackerDefinition, type ViewType,
 } from "../lib/customTrackers.js";
 import { FieldInput } from "../components/FieldInput.js";
+import { TrackerTable } from "../components/TrackerTable.js";
+import { TrackerChart } from "../components/TrackerChart.js";
+import { TrackerList } from "../components/TrackerList.js";
 import { TRACKER_TEMPLATES, type TrackerTemplate } from "../lib/trackerTemplates.js";
+
+const SAMPLE_ROWS = 4;
+
+/** Fabricated entries for Display's live preview -- enough variety (4
+ * rows, cycling through each select/multi_select field's own options,
+ * staggered dates, varied numbers) that a Chart shows multiple bars and
+ * a Table/List reads like it already has data, without the tracker
+ * needing to exist yet. Fields with no key (a brand new, not-yet-labeled
+ * draft) are left out -- nothing meaningful to fabricate for a field
+ * that isn't done being defined, same reasoning as the entry-form
+ * preview above skipping nothing but rendering blanks as-is; here an
+ * incomplete field would also collide on the same empty key across
+ * rows, so it's excluded instead of risking that. */
+function sampleEntries(fields: FieldDef[]): Entry[] {
+  const usable = fields.filter((f) => f.key);
+  return Array.from({ length: SAMPLE_ROWS }, (_, i) => {
+    const values: EntryValues = {};
+    for (const f of usable) {
+      if (f.type === "boolean") values[f.key] = i % 2 === 0;
+      else if (f.type === "number") values[f.key] = [12, 28, 19, 35][i % 4]!;
+      else if (f.type === "rating") values[f.key] = (i % 5) + 1;
+      else if (f.type === "select") values[f.key] = f.options?.length ? f.options[i % f.options.length]! : "Sample";
+      else if (f.type === "multi_select") values[f.key] = f.options?.length ? [f.options[i % f.options.length]!] : [];
+      else if (f.type === "date") values[f.key] = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      else if (f.type === "long_text") values[f.key] = `Sample notes for entry ${i + 1}.`;
+      else values[f.key] = `Sample ${i + 1}`;
+    }
+    const occurredAt = new Date(Date.now() - i * 86400000).toISOString();
+    return { id: `preview-${i}`, tracker: "preview", values, occurred_at: occurredAt, updated_at: occurredAt };
+  });
+}
 
 const VIEW_LABELS: Record<ViewType, string> = { list: "List", table: "Table", chart: "Chart" };
 
@@ -139,6 +173,36 @@ function TrackerForm({ existing, template, onSaved }: { existing?: TrackerDefini
   }
 
   const chartEligible = !!amountField && summable;
+
+  // Same ineligible-chart fallback submit() already needs (view can be
+  // stuck on "chart" after the amount field it depended on was removed,
+  // since the radio only disables re-selecting it, not the state that's
+  // already there) -- reused here so the preview never tries to render a
+  // chart with no amount field instead of just falling back to list.
+  const previewView = view === "chart" && !chartEligible ? "list" : view;
+  const previewFields = fields.filter((f) => f.key);
+  const previewDef: TrackerDefinition = {
+    // Deliberately never the real `slug` (even when editing an existing
+    // tracker) -- TrackerTable keys its own per-viewer column picker off
+    // def.slug in localStorage, and this preview sharing the real
+    // tracker's slug would read AND write that same real, persisted
+    // preference instead of its own disposable one.
+    slug: "__preview__",
+    name: name || "Preview",
+    description,
+    background,
+    fields: previewFields,
+    amount_field: amountField || null,
+    amount_meaning: amountField ? amountMeaning.trim() : null,
+    summable: amountField ? summable : false,
+    category_field: categoryField || null,
+    label_field: labelField || null,
+    date_field: dateField || null,
+    icon: icon || null,
+    pinned,
+    ui_config: { view: previewView, accent: accent || null, columns: previewView === "table" ? columns : [] },
+  };
+  const previewEntries = sampleEntries(previewFields);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -415,6 +479,20 @@ function TrackerForm({ existing, template, onSaved }: { existing?: TrackerDefini
               ))}
             </div>
             <span className="text-xs text-muted-foreground">Leave none checked to show every field.</span>
+          </div>
+        )}
+
+        {previewFields.length > 0 && (
+          <div className="grid gap-1 mt-2">
+            <span className="text-sm">Preview</span>
+            <p className="text-xs text-muted-foreground">Sample data, just to show the shape of this view. Updates live as you change fields or display settings above.</p>
+            {previewView === "table" ? (
+              <TrackerTable def={previewDef} entries={previewEntries} />
+            ) : previewView === "chart" ? (
+              <TrackerChart def={previewDef} entries={previewEntries} />
+            ) : (
+              <TrackerList def={previewDef} entries={previewEntries} />
+            )}
           </div>
         )}
       </section>

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useTrackStackAuth, QualitativeFieldFilter } from "trackstack-ui";
-import { Pencil, Trash2, X } from "lucide-react";
+import { X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { customApi, formatValue, notifyPinnedTrackersChanged, RATING_MAX, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
+import { customApi, notifyPinnedTrackersChanged, RATING_MAX, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
 import { TrackerTable } from "../components/TrackerTable.js";
 import { TrackerChart } from "../components/TrackerChart.js";
+import { TrackerList } from "../components/TrackerList.js";
 import { NumberRangeFilter, type NumberRange } from "../components/NumberRangeFilter.js";
 import { FieldInput } from "../components/FieldInput.js";
 
@@ -114,25 +115,6 @@ function numberBounds(entries: Entry[], key: string): { min: number; max: number
   const values = entries.map((e) => e.values[key]).filter((v): v is number => typeof v === "number");
   if (values.length === 0) return null;
   return { min: Math.min(...values), max: Math.max(...values) };
-}
-
-function EntryRow({ def, entry }: { def: TrackerDefinition; entry: Entry }) {
-  const titleField = def.fields.find((f) => f.key === def.label_field);
-  const title = titleField ? String(entry.values[titleField.key] ?? "") : "";
-  const rest = def.fields.filter((f) => f.key !== def.label_field && entry.values[f.key] !== undefined);
-  return (
-    <div className="min-w-0 flex-1">
-      {title && <div className="text-sm">{title}</div>}
-      <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-        {rest.map((f) => (
-          <span key={f.key}>
-            <span className="opacity-70">{f.label}:</span> {formatValue(f, entry.values[f.key])}
-          </span>
-        ))}
-        {!def.date_field && <span>{new Date(entry.occurred_at).toLocaleDateString()}</span>}
-      </div>
-    </div>
-  );
 }
 
 export function TrackerView() {
@@ -312,20 +294,5 @@ function renderView(def: TrackerDefinition, entries: Entry[], onEdit: (id: strin
   if (view === "table") return <TrackerTable def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
   if (view === "chart") return <TrackerChart def={def} entries={entries} emptyMessage={emptyMessage} />;
 
-  return (
-    <div className="bg-card border border-border rounded-lg divide-y divide-border">
-      {entries.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">{emptyMessage}</p>}
-      {entries.map((entry) => (
-        <div key={entry.id} className="flex items-center gap-3 px-4 py-3">
-          <EntryRow def={def} entry={entry} />
-          <button onClick={() => onEdit(entry.id)} className="text-muted-foreground hover:text-foreground flex-shrink-0" aria-label="Edit">
-            <Pencil className="h-4 w-4" />
-          </button>
-          <button onClick={() => onDelete(entry.id)} className="text-muted-foreground hover:text-destructive flex-shrink-0" aria-label="Delete">
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
+  return <TrackerList def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
 }

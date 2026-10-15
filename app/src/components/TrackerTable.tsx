@@ -65,8 +65,11 @@ export function TrackerTable({
 }: {
   def: TrackerDefinition;
   entries: Entry[];
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+  // Optional so a preview with no real entries to act on (TrackerBuilder's
+  // own Display preview) can render this exact component with neither --
+  // the action column simply doesn't appear, same treatment as TrackerList.
+  onEdit?: (id: string) => void;
+  onDelete?: (id: string) => void;
   emptyMessage?: string;
 }) {
   const defaultKeys = [...(def.ui_config?.columns?.length ? def.ui_config.columns : def.fields.map((f) => f.key)), OCCURRED_KEY];
@@ -116,6 +119,7 @@ export function TrackerTable({
   // which wasn't in this tracker's configured columns, visibly did
   // nothing).
   const columns = def.fields.filter((f) => visibleKeys.includes(f.key));
+  const showActions = !!(onEdit || onDelete);
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-visible">
@@ -155,13 +159,13 @@ export function TrackerTable({
                 <th key={f.key} className="text-left font-medium px-3 py-2 whitespace-nowrap">{f.label}</th>
               ))}
               {showOccurred && <th className="text-left font-medium px-3 py-2 whitespace-nowrap">Occurred</th>}
-              <th className="px-3 py-2" />
+              {showActions && <th className="px-3 py-2" />}
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 && (
               <tr>
-                <td colSpan={columns.length + (showOccurred ? 1 : 0) + 1} className="px-3 py-6 text-center text-muted-foreground">{emptyMessage}</td>
+                <td colSpan={columns.length + (showOccurred ? 1 : 0) + (showActions ? 1 : 0)} className="px-3 py-6 text-center text-muted-foreground">{emptyMessage}</td>
               </tr>
             )}
             {entries.map((entry) => (
@@ -172,10 +176,12 @@ export function TrackerTable({
                   </td>
                 ))}
                 {showOccurred && <td className="px-3 py-2 whitespace-nowrap text-muted-foreground font-mono">{new Date(entry.occurred_at).toLocaleDateString()}</td>}
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <button onClick={() => onEdit(entry.id)} className="text-muted-foreground hover:text-foreground px-1">Edit</button>
-                  <button onClick={() => onDelete(entry.id)} className="text-muted-foreground hover:text-destructive px-1">Delete</button>
-                </td>
+                {showActions && (
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {onEdit && <button onClick={() => onEdit(entry.id)} className="text-muted-foreground hover:text-foreground px-1">Edit</button>}
+                    {onDelete && <button onClick={() => onDelete(entry.id)} className="text-muted-foreground hover:text-destructive px-1">Delete</button>}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
