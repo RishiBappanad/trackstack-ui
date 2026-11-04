@@ -1,7 +1,7 @@
 import { Pencil, Trash2 } from "lucide-react";
-import { formatValue, type Entry, type TrackerDefinition } from "../lib/customTrackers.js";
+import { formatValue, type Entry, type TableDef } from "../lib/customTrackers.js";
 
-function EntryRow({ def, entry }: { def: TrackerDefinition; entry: Entry }) {
+function EntryRow({ def, entry }: { def: TableDef; entry: Entry }) {
   const titleField = def.fields.find((f) => f.key === def.label_field);
   const title = titleField ? String(entry.values[titleField.key] ?? "") : "";
   const rest = def.fields.filter((f) => f.key !== def.label_field && entry.values[f.key] !== undefined);
@@ -28,7 +28,7 @@ function EntryRow({ def, entry }: { def: TrackerDefinition; entry: Entry }) {
 export function TrackerList({
   def, entries, onEdit, onDelete, emptyMessage = "No entries yet.",
 }: {
-  def: TrackerDefinition;
+  def: TableDef;
   entries: Entry[];
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;

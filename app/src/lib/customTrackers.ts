@@ -31,8 +31,21 @@ export interface FieldDef {
   required?: boolean;
 }
 
-export interface TrackerDefinition {
+/** MULTI_TABLE_TRACKERS_SPEC.md's Tracker -> Table -> Entry model (Phase
+ * 6, replacing the old single-table TrackerDefinition this app's pages
+ * used before): a tracker is just its own identity/sidebar info; a
+ * table is one object type within it, addable independently. Mirrors
+ * trackstack-custom's definitions.ts TrackerMeta/TableDef exactly. */
+export interface TrackerMeta {
   slug: string;
+  name: string;
+  description: string;
+  icon: IconName | null;
+  pinned: boolean;
+}
+
+export interface TableDef {
+  table_key: string;
   name: string;
   description: string;
   background: string;
@@ -43,8 +56,6 @@ export interface TrackerDefinition {
   category_field: string | null;
   label_field: string | null;
   date_field: string | null;
-  icon: IconName | null;
-  pinned: boolean;
   ui_config: UiConfig | null;
 }
 
@@ -65,20 +76,22 @@ export interface UiConfig {
   columns: string[] | null;
 }
 
-// The dataviz skill's validated 8-hue categorical palette (dark-mode
-// column, references/palette.md) -- this app is dark-theme-only (see
-// index.css), so there's no separate light variant to carry here. Fixed
-// order, CVD-safe adjacent contrast; never reassign a name to a
-// different hex or reorder the underlying set.
+// The dataviz skill's validated 8-hue categorical palette (LIGHT-mode
+// column, references/palette.md) -- this app moved to a light theme
+// 2026-11-04 (see index.css); these were the dark-mode column's values
+// before that, tuned for contrast against a near-black surface, not
+// this app's current near-white one. Fixed order, CVD-safe adjacent
+// contrast; never reassign a name to a different hex or reorder the
+// underlying set.
 export const ACCENT_HEX: Record<AccentName, string> = {
-  blue: "#3987e5",
-  orange: "#d95926",
-  aqua: "#199e70",
-  yellow: "#c98500",
-  magenta: "#d55181",
+  blue: "#2a78d6",
+  orange: "#eb6834",
+  aqua: "#1baf7a",
+  yellow: "#eda100",
+  magenta: "#e87ba4",
   green: "#008300",
-  violet: "#9085e9",
-  red: "#e66767",
+  violet: "#6250d6",
+  red: "#e34948",
 };
 
 export type EntryValues = Record<string, string | number | boolean | string[]>;

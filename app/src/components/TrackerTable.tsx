@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import { formatValue, type Entry, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
+import { formatValue, type Entry, type FieldDef, type TableDef } from "../lib/customTrackers.js";
 
 // A live, per-viewer column filter -- distinct from `ui_config.columns`,
-// which is the tracker's own configured default, set once at setup time
+// which is the table's own configured default, set once at setup time
 // and shared by whoever views it. This is "how I currently want to see
 // it on THIS browser," which is why it lives in localStorage rather than
 // being written back to ui_config: a per-viewer convenience, not data
 // another viewer or Claude needs to see, and not something that needs to
-// survive a device change. Keyed by slug, not by anything else, so it
-// naturally resets if a tracker is deleted and a new one reuses the slug.
+// survive a device change. Keyed by `${trackerSlug}:${tableKey}` (the
+// caller's `storageKey`), so it naturally resets if a tracker/table is
+// deleted and a new one reuses the same slug/key.
 const COLUMN_PREF_PREFIX = "trackstack:table-columns:";
 
 // A synthetic column key for the entry's occurred_at (every entry has
@@ -61,22 +62,25 @@ function clearColumnPref(slug: string): void {
  * time choice and the viewing-time choice are deliberately two different
  * things, not one setting with two editors. */
 export function TrackerTable({
-  def, entries, onEdit, onDelete, emptyMessage = "No entries yet.",
+  def, storageKey, entries, onEdit, onDelete, emptyMessage = "No entries yet.",
 }: {
-  def: TrackerDefinition;
+  def: TableDef;
+  // `${trackerSlug}:${tableKey}`, or a disposable key like "__preview__"
+  // for a preview with nothing real to persist (see TableForm).
+  storageKey: string;
   entries: Entry[];
-  // Optional so a preview with no real entries to act on (TrackerBuilder's
-  // own Display preview) can render this exact component with neither --
-  // the action column simply doesn't appear, same treatment as TrackerList.
+  // Optional so a preview with no real entries to act on (TableForm's own
+  // Display preview) can render this exact component with neither -- the
+  // action column simply doesn't appear, same treatment as TrackerList.
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   emptyMessage?: string;
 }) {
   const defaultKeys = [...(def.ui_config?.columns?.length ? def.ui_config.columns : def.fields.map((f) => f.key)), OCCURRED_KEY];
-  const [visibleKeys, setVisibleKeys] = useState<string[]>(() => loadColumnPref(def.slug) ?? defaultKeys);
+  const [visibleKeys, setVisibleKeys] = useState<string[]>(() => loadColumnPref(storageKey) ?? defaultKeys);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const hasOverride = loadColumnPref(def.slug) !== null;
+  const hasOverride = loadColumnPref(storageKey) !== null;
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -98,13 +102,13 @@ export function TrackerTable({
   function toggle(key: string) {
     setVisibleKeys((prev) => {
       const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
-      saveColumnPref(def.slug, next);
+      saveColumnPref(storageKey, next);
       return next;
     });
   }
 
   function resetToDefault() {
-    clearColumnPref(def.slug);
+    clearColumnPref(storageKey);
     setVisibleKeys(defaultKeys);
   }
 

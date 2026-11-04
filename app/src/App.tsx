@@ -12,8 +12,8 @@ import { Goals } from "./pages/Goals.js";
 import { Tokens } from "./pages/Tokens.js";
 import { Appearance } from "./pages/Appearance.js";
 import { Trackers } from "./pages/Trackers.js";
-import { NewTracker, EditTracker } from "./pages/TrackerBuilder.js";
-import { TrackerView } from "./pages/TrackerView.js";
+import { NewTracker, EditTrackerMeta, NewTable, EditTable } from "./pages/TrackerBuilder.js";
+import { TrackerHome, TrackerView } from "./pages/TrackerView.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -109,8 +109,11 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             <Route path="/goals" component={Goals} />
             <Route path="/trackers" component={Trackers} />
             <Route path="/trackers/new" component={NewTracker} />
-            <Route path="/trackers/:slug/edit" component={EditTracker} />
-            <Route path="/trackers/:slug" component={TrackerView} />
+            <Route path="/trackers/:slug/edit" component={EditTrackerMeta} />
+            <Route path="/trackers/:slug/tables/new" component={NewTable} />
+            <Route path="/trackers/:slug/tables/:tableKey/edit" component={EditTable} />
+            <Route path="/trackers/:slug/tables/:tableKey" component={TrackerView} />
+            <Route path="/trackers/:slug" component={TrackerHome} />
             <Route path="/tokens" component={Tokens} />
             <Route path="/appearance" component={Appearance} />
             <Route>

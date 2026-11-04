@@ -3,13 +3,13 @@ import { Link } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { LayoutDashboard, Plus, Star } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { CUSTOM_BASE_URL, ICON_COMPONENTS, customApi, type TrackerDefinition } from "../lib/customTrackers.js";
+import { CUSTOM_BASE_URL, ICON_COMPONENTS, customApi, type TrackerMeta } from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
 export function Trackers() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
-  const [trackers, setTrackers] = useState<TrackerDefinition[] | null>(null);
+  const [trackers, setTrackers] = useState<TrackerMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -18,7 +18,7 @@ export function Trackers() {
       return;
     }
     try {
-      setTrackers((await customApi("/trackers", token)) as TrackerDefinition[]);
+      setTrackers((await customApi("/trackers", token)) as TrackerMeta[]);
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not reach the custom trackers service");
@@ -63,7 +63,6 @@ export function Trackers() {
                   {t.pinned && <Star className="h-3 w-3 text-muted-foreground" aria-label="Pinned to sidebar" />}
                 </div>
                 {t.description && <div className="text-sm text-muted-foreground mt-0.5">{t.description}</div>}
-                <div className="text-xs text-muted-foreground mt-2">{t.fields.map((f) => f.label).join(" · ")}</div>
               </div>
             </Link>
           );

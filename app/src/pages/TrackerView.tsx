@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useTrackStackAuth, QualitativeFieldFilter } from "trackstack-ui";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { customApi, notifyPinnedTrackersChanged, RATING_MAX, type Entry, type EntryValues, type FieldDef, type TrackerDefinition } from "../lib/customTrackers.js";
+import { customApi, notifyPinnedTrackersChanged, RATING_MAX, type Entry, type EntryValues, type FieldDef, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
 import { TrackerTable } from "../components/TrackerTable.js";
 import { TrackerChart } from "../components/TrackerChart.js";
 import { TrackerList } from "../components/TrackerList.js";
@@ -51,9 +51,9 @@ function toValues(fields: FieldDef[], state: FormState, editing: boolean): Recor
 }
 
 /** One form for creating an entry and editing one in place -- generated
- * entirely from the tracker's field list. */
+ * entirely from the table's field list. */
 function EntryForm({ def, initial, submitLabel, onSubmit, onCancel }: {
-  def: TrackerDefinition;
+  def: TableDef;
   initial?: EntryValues;
   submitLabel: string;
   onSubmit: (values: Record<string, unknown>) => Promise<void>;
@@ -90,7 +90,7 @@ const QUAL_TYPES: FieldDef["type"][] = ["select", "multi_select", "boolean", "ra
 /** The fixed vocabulary a qualitative filter's checkboxes offer for a
  * given field -- select/multi_select already have one (`options`);
  * boolean and rating don't carry a field-level list, so one is
- * synthesized here instead of asking the tracker definition for it. */
+ * synthesized here instead of asking the table definition for it. */
 function qualOptions(f: FieldDef): string[] {
   if (f.type === "boolean") return ["Yes", "No"];
   if (f.type === "rating") return Array.from({ length: RATING_MAX }, (_, i) => String(i + 1));
@@ -117,12 +117,89 @@ function numberBounds(entries: Entry[], key: string): { min: number; max: number
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 
-export function TrackerView() {
+/** Table-tabs navigation across this tracker's own tables -- the one
+ * piece of chrome shared between `/trackers/:slug` (which never renders
+ * its own content, just redirects here or to the empty-state below) and
+ * every `/trackers/:slug/tables/:tableKey` page. */
+function TableTabs({ trackerSlug, tables, activeKey }: { trackerSlug: string; tables: { table_key: string; name: string }[]; activeKey?: string }) {
+  return (
+    <div className="flex items-center gap-1 border-b border-border mb-6 overflow-x-auto">
+      {tables.map((t) => (
+        <Link
+          key={t.table_key}
+          href={`/trackers/${trackerSlug}/tables/${t.table_key}`}
+          className={
+            "px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px " +
+            (t.table_key === activeKey ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
+          }
+        >
+          {t.name}
+        </Link>
+      ))}
+      <Link
+        href={`/trackers/${trackerSlug}/tables/new`}
+        className="flex items-center gap-1 px-3 py-2 text-sm text-muted-foreground hover:text-foreground whitespace-nowrap"
+      >
+        <Plus className="h-3.5 w-3.5" /> Add table
+      </Link>
+    </div>
+  );
+}
+
+/** `/trackers/:slug` itself -- never renders tracker content directly
+ * (the real content is always one specific table, per
+ * MULTI_TABLE_TRACKERS_SPEC.md's table-scoped routing). Lands on the
+ * first table if one exists, or prompts to create one if not. */
+export function TrackerHome() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const [, params] = useRoute("/trackers/:slug");
   const [, navigate] = useLocation();
   const slug = params?.slug ?? "";
-  const [def, setDef] = useState<TrackerDefinition | null>(null);
+  const [meta, setMeta] = useState<TrackerMeta | null>(null);
+  const [tables, setTables] = useState<{ table_key: string; name: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!slug) return;
+    Promise.all([customApi(`/trackers/${slug}`, token), customApi(`/trackers/${slug}/tables`, token)])
+      .then(([m, t]) => {
+        setMeta(m as TrackerMeta);
+        setTables(t as { table_key: string; name: string }[]);
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load the tracker"));
+  }, [slug, token]);
+
+  useEffect(() => {
+    if (tables && tables.length > 0) navigate(`/trackers/${slug}/tables/${tables[0]!.table_key}`, { replace: true });
+  }, [tables, slug, navigate]);
+
+  if (error) return <p className="text-destructive text-sm">{error}</p>;
+  if (!meta || !tables) return null;
+  if (tables.length > 0) return null; // redirecting
+
+  return (
+    <div className="max-w-xl">
+      <h1 className="text-2xl mb-2">{meta.name}</h1>
+      {meta.description && <p className="text-sm text-muted-foreground mb-6">{meta.description}</p>}
+      <div className="bg-card border border-border rounded-lg p-6 text-center">
+        <p className="text-sm text-muted-foreground mb-4">This tracker doesn't have any tables yet. A table is one kind of thing you log here (e.g. "Log", "Notes").</p>
+        <Link href={`/trackers/${slug}/tables/new`} className="inline-flex items-center gap-1 bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium">
+          <Plus className="h-4 w-4" /> Add a table
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export function TrackerView() {
+  const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
+  const [, params] = useRoute("/trackers/:slug/tables/:tableKey");
+  const [, navigate] = useLocation();
+  const slug = params?.slug ?? "";
+  const tableKey = params?.tableKey ?? "";
+  const [meta, setMeta] = useState<TrackerMeta | null>(null);
+  const [tables, setTables] = useState<{ table_key: string; name: string }[]>([]);
+  const [table, setTable] = useState<TableDef | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,17 +217,27 @@ export function TrackerView() {
 
   const load = useCallback(async () => {
     try {
-      const [d, e] = await Promise.all([customApi(`/trackers/${slug}`, token), customApi(`/trackers/${slug}/entries`, token)]);
-      setDef(d as TrackerDefinition);
+      const [m, ts, t, e] = await Promise.all([
+        customApi(`/trackers/${slug}`, token),
+        customApi(`/trackers/${slug}/tables`, token),
+        customApi(`/trackers/${slug}/tables/${tableKey}`, token),
+        customApi(`/trackers/${slug}/tables/${tableKey}/entries`, token),
+      ]);
+      setMeta(m as TrackerMeta);
+      setTables(ts as { table_key: string; name: string }[]);
+      setTable(t as TableDef);
       setEntries((e as Entry[]).slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load the tracker");
+      setError(err instanceof ApiError ? err.message : "Could not load this table");
     }
-  }, [slug, token]);
+  }, [slug, tableKey, token]);
 
   useEffect(() => {
     load();
+    setEditingId(null);
+    setQualFilters({});
+    setNumFilters({});
   }, [load]);
 
   async function run(action: () => Promise<unknown>, failure: string) {
@@ -163,17 +250,29 @@ export function TrackerView() {
   }
 
   const create = (values: Record<string, unknown>) =>
-    run(() => customApi(`/trackers/${slug}/entries`, token, { method: "POST", body: JSON.stringify({ values }) }), "Could not add the entry");
+    run(() => customApi(`/trackers/${slug}/tables/${tableKey}/entries`, token, { method: "POST", body: JSON.stringify({ values }) }), "Could not add the entry");
   const save = (id: string, values: Record<string, unknown>) =>
     run(async () => {
-      await customApi(`/trackers/${slug}/entries/${id}`, token, { method: "PATCH", body: JSON.stringify({ values }) });
+      await customApi(`/trackers/${slug}/tables/${tableKey}/entries/${id}`, token, { method: "PATCH", body: JSON.stringify({ values }) });
       setEditingId(null);
     }, "Could not save the entry");
-  const remove = (id: string) => run(() => customApi(`/trackers/${slug}/entries/${id}`, token, { method: "DELETE" }), "Could not delete the entry");
+  const remove = (id: string) => run(() => customApi(`/trackers/${slug}/tables/${tableKey}/entries/${id}`, token, { method: "DELETE" }), "Could not delete the entry");
+
+  async function deleteTable() {
+    if (!table) return;
+    if (!window.confirm(`Delete "${table.name}" and all ${entries.length} of its entries? This can't be undone.`)) return;
+    try {
+      await customApi(`/trackers/${slug}/tables/${tableKey}`, token, { method: "DELETE" });
+      const remaining = tables.filter((t) => t.table_key !== tableKey);
+      navigate(remaining.length > 0 ? `/trackers/${slug}/tables/${remaining[0]!.table_key}` : `/trackers/${slug}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete the table");
+    }
+  }
 
   async function deleteTracker() {
-    if (!def) return;
-    if (!window.confirm(`Delete "${def.name}" and all ${entries.length} of its entries? This can't be undone.`)) return;
+    if (!meta) return;
+    if (!window.confirm(`Delete "${meta.name}" and all of its tables and entries? This can't be undone.`)) return;
     try {
       await customApi(`/trackers/${slug}`, token, { method: "DELETE" });
       notifyPinnedTrackersChanged(); // a deleted pinned tracker must disappear from the sidebar too
@@ -183,12 +282,12 @@ export function TrackerView() {
     }
   }
 
-  if (!def) return error ? <p className="text-destructive text-sm">{error}</p> : null;
+  if (!meta || !table) return error ? <p className="text-destructive text-sm">{error}</p> : null;
 
   const editingEntry = entries.find((e) => e.id === editingId) ?? null;
 
-  const qualFields = def.fields.filter((f) => QUAL_TYPES.includes(f.type));
-  const numFields = def.fields.filter((f) => f.type === "number");
+  const qualFields = table.fields.filter((f) => QUAL_TYPES.includes(f.type));
+  const numFields = table.fields.filter((f) => f.type === "number");
 
   const filteredEntries = entries.filter((entry) => {
     for (const f of qualFields) {
@@ -209,15 +308,27 @@ export function TrackerView() {
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-start justify-between mb-6 gap-4">
+      <div className="flex items-start justify-between mb-2 gap-4">
         <div>
-          <h1 className="text-2xl">{def.name}</h1>
-          {def.description && <p className="text-sm text-muted-foreground mt-1">{def.description}</p>}
+          <h1 className="text-2xl">{meta.name}</h1>
+          {meta.description && <p className="text-sm text-muted-foreground mt-1">{meta.description}</p>}
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
           <Link href="/trackers" className="hover:text-foreground">All trackers</Link>
-          <Link href={`/trackers/${slug}/edit`} className="hover:text-foreground">Edit</Link>
-          <button onClick={deleteTracker} className="hover:text-destructive">Delete</button>
+          <Link href={`/trackers/${slug}/edit`} className="hover:text-foreground">Edit tracker</Link>
+          <button onClick={deleteTracker} className="hover:text-destructive">Delete tracker</button>
+        </div>
+      </div>
+
+      <TableTabs trackerSlug={slug} tables={tables} activeKey={tableKey} />
+
+      <div className="flex items-start justify-between mb-6 gap-4">
+        <div>
+          {table.description && <p className="text-sm text-muted-foreground">{table.description}</p>}
+        </div>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
+          <Link href={`/trackers/${slug}/tables/${tableKey}/edit`} className="hover:text-foreground">Edit table</Link>
+          {tables.length > 1 && <button onClick={deleteTable} className="hover:text-destructive">Delete table</button>}
         </div>
       </div>
 
@@ -230,12 +341,10 @@ export function TrackerView() {
         // switching from "create" to "edit" (or from editing one entry to
         // another) re-rendered the SAME mounted instance with a new
         // `initial` prop that nothing ever re-read, leaving every field
-        // blank instead of pre-filled. Found 2026-10-10 (table view's Edit
-        // visibly did nothing -- same bug in every view, table just made
-        // it obvious since list/chart hadn't been exercised as hard).
-        <EntryForm key={editingEntry.id} def={def} initial={editingEntry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
+        // blank instead of pre-filled.
+        <EntryForm key={editingEntry.id} def={table} initial={editingEntry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
       ) : (
-        <EntryForm key="__create__" def={def} submitLabel="Add" onSubmit={create} />
+        <EntryForm key="__create__" def={table} submitLabel="Add" onSubmit={create} />
       )}
 
       {(qualFields.length > 0 || numFields.length > 0) && (
@@ -275,7 +384,7 @@ export function TrackerView() {
         </div>
       )}
 
-      {renderView(def, filteredEntries, setEditingId, remove, emptyMessage)}
+      {renderView(table, slug, tableKey, filteredEntries, setEditingId, remove, emptyMessage)}
     </div>
   );
 }
@@ -288,11 +397,11 @@ export function TrackerView() {
  * (above), uniformly across all three views, rather than inline per row
  * -- a table row swapped for a wrapping form reads as broken, and a
  * chart has no row to swap in the first place. */
-function renderView(def: TrackerDefinition, entries: Entry[], onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
-  const view = def.ui_config?.view ?? "list";
+function renderView(table: TableDef, trackerSlug: string, tableKey: string, entries: Entry[], onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
+  const view = table.ui_config?.view ?? "list";
 
-  if (view === "table") return <TrackerTable def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
-  if (view === "chart") return <TrackerChart def={def} entries={entries} emptyMessage={emptyMessage} />;
+  if (view === "table") return <TrackerTable def={table} storageKey={`${trackerSlug}:${tableKey}`} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  if (view === "chart") return <TrackerChart def={table} entries={entries} emptyMessage={emptyMessage} />;
 
-  return <TrackerList def={def} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  return <TrackerList def={table} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
 }

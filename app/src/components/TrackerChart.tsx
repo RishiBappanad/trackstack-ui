@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { ACCENT_HEX, type Entry, type TrackerDefinition } from "../lib/customTrackers.js";
+import { ACCENT_HEX, type Entry, type TableDef } from "../lib/customTrackers.js";
 
 /** Tier B's "chart" view: entries grouped by category, summed on the
  * amount field -- a single-series magnitude-by-category comparison, so a
@@ -44,7 +44,7 @@ function formatTick(n: number): string {
 const CHART_HEIGHT = 200;
 const MAX_BAR_WIDTH = 24;
 
-export function TrackerChart({ def, entries, emptyMessage = "No entries yet." }: { def: TrackerDefinition; entries: Entry[]; emptyMessage?: string }) {
+export function TrackerChart({ def, entries, emptyMessage = "No entries yet." }: { def: TableDef; entries: Entry[]; emptyMessage?: string }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const tooltipId = useId();
   const amountField = def.amount_field;
