@@ -4,8 +4,8 @@ import { useTrackStackAuth } from "trackstack-ui";
 import { ChevronDown, ChevronUp, GripVertical, Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import {
-  ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, FIELD_TYPE_LABELS, ICON_COMPONENTS, ICON_NAMES, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
-  type AccentName, type Entry, type EntryValues, type FieldDef, type FieldType, type IconName, type TableDef, type TrackerMeta, type ViewType,
+  ACCENT_HEX, ACCENT_NAMES, FIELD_TYPES, FIELD_TYPE_LABELS, ICON_COMPONENTS, ICON_NAMES, ROLLUP_AGGREGATES, ROLLUP_AGGREGATE_LABELS, VIEW_TYPES, customApi, notifyPinnedTrackersChanged, slugify, uniqueSlug,
+  type AccentName, type Entry, type EntryValues, type FieldDef, type FieldType, type IconName, type RollupAggregate, type TableDef, type TrackerMeta, type ViewType,
 } from "../lib/customTrackers.js";
 import { FieldInput } from "../components/FieldInput.js";
 import { TrackerTable } from "../components/TrackerTable.js";
@@ -37,6 +37,13 @@ function sampleEntries(fields: FieldDef[]): Entry[] {
       else if (f.type === "multi_select") values[f.key] = f.options?.length ? [f.options[i % f.options.length]!] : [];
       else if (f.type === "date") values[f.key] = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
       else if (f.type === "long_text") values[f.key] = `Sample notes for entry ${i + 1}.`;
+      // link/lookup/rollup have no real target entries to sample from in
+      // a not-yet-saved preview -- link gets a placeholder label (its own
+      // FieldInput already renders as a disabled picker regardless, this
+      // only affects the Table/List/Chart preview below it); lookup/
+      // rollup get a plausible number, since that's what they usually are.
+      else if (f.type === "link") values[f.key] = f.multiple ? [`Linked ${i + 1}`] : `Linked ${i + 1}`;
+      else if (f.type === "lookup" || f.type === "rollup") values[f.key] = [12, 28, 19, 35][i % 4]!;
       else values[f.key] = `Sample ${i + 1}`;
     }
     const occurredAt = new Date(Date.now() - i * 86400000).toISOString();
@@ -60,6 +67,15 @@ interface FieldDraft {
   optionsText: string;
   required: boolean;
   locked: boolean;
+  // Link fields only.
+  targetTableKey: string;
+  multiple: boolean;
+  // Lookup/Rollup fields only. `through` is another draft's `key` (a link
+  // field on this same table); `targetField` is a field key on THAT link's
+  // target table.
+  through: string;
+  targetField: string;
+  aggregate: RollupAggregate;
 }
 
 const inputClass = "bg-secondary border border-border rounded-md px-3 py-2 text-sm";
@@ -68,7 +84,11 @@ const inputClass = "bg-secondary border border-border rounded-md px-3 py-2 text-
  * template's is just a prefilled starting point, as editable/removable
  * as one typed in by hand (nothing's actually saved yet). */
 function draftFromField(f: FieldDef, locked = true): FieldDraft {
-  return { key: f.key, label: f.label, type: f.type, unit: f.unit ?? "", optionsText: (f.options ?? []).join(", "), required: !!f.required, locked };
+  return {
+    key: f.key, label: f.label, type: f.type, unit: f.unit ?? "", optionsText: (f.options ?? []).join(", "), required: !!f.required, locked,
+    targetTableKey: f.target?.table_key ?? "", multiple: !!f.multiple,
+    through: f.through ?? "", targetField: f.target_field ?? "", aggregate: f.aggregate ?? "sum",
+  };
 }
 
 function fieldFromDraft(d: FieldDraft): FieldDef {
@@ -76,6 +96,24 @@ function fieldFromDraft(d: FieldDraft): FieldDef {
   if (d.required) field.required = true;
   if (d.type === "number" && d.unit.trim()) field.unit = d.unit.trim();
   if (d.type === "select" || d.type === "multi_select") field.options = d.optionsText.split(",").map((o) => o.trim()).filter(Boolean);
+  if (d.type === "link") {
+    field.target = { table_key: d.targetTableKey };
+    // Unlike `required` elsewhere in this function, the backend's own
+    // validateLinkField requires `multiple` to be an actual boolean on
+    // every link field, not omitted-and-defaulted -- found live, via the
+    // real "fields[1].multiple must be a boolean" 400 this produced when
+    // this line only set it for `true`.
+    field.multiple = d.multiple;
+  }
+  if (d.type === "lookup") {
+    field.through = d.through;
+    field.target_field = d.targetField;
+  }
+  if (d.type === "rollup") {
+    field.through = d.through;
+    field.target_field = d.targetField;
+    field.aggregate = d.aggregate;
+  }
   return field;
 }
 
@@ -263,8 +301,43 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // This tracker's OTHER tables -- a link field's only valid targets for
+  // now (cross-tracker targets are a later, "advanced" step the backend
+  // already supports but this builder doesn't expose yet). Fetched once;
+  // listTables already returns each table's full field list, which is
+  // also what a lookup/rollup's target-field picker needs, so one fetch
+  // covers both.
+  const [otherTables, setOtherTables] = useState<TableDef[]>([]);
+  useEffect(() => {
+    customApi(`/trackers/${trackerSlug}/tables`, token)
+      .then((ts) => setOtherTables(ts as TableDef[]))
+      .catch(() => {}); // link/lookup/rollup fields just show no targets yet; every other section of this form still works
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackerSlug, token]);
+
   const fields = drafts.map(fieldFromDraft);
   const ofType = (...types: FieldType[]) => fields.filter((f) => types.includes(f.type) && f.label);
+
+  // Every valid link target, INCLUDING this table itself (self-links are
+  // allowed -- a Tasks table's own "subtasks" field). The server's own
+  // copy of this table (if any) is replaced with the live draft so a
+  // field just added above is immediately linkable/rollup-able without
+  // saving first; a brand new table that isn't in otherTables yet gets a
+  // synthetic entry built the same way.
+  const liveSelf: TableDef = { table_key: tableKey || "primary", name: name || "This table", description, background, fields, amount_field: null, amount_meaning: null, summable: false, category_field: null, label_field: null, date_field: null, ui_config: null };
+  const linkableTables: TableDef[] = otherTables.some((t) => t.table_key === liveSelf.table_key)
+    ? otherTables.map((t) => (t.table_key === liveSelf.table_key ? liveSelf : t))
+    : [...otherTables, liveSelf];
+
+  /** The target table of lookup/rollup draft `d`'s chosen `through` link
+   * field -- resolved from the CURRENT drafts (not the saved fields), so
+   * picking a link's target and then adding a lookup through it works in
+   * one pass without saving in between. */
+  function throughTargetFields(through: string): FieldDef[] {
+    const linkField = drafts.find((d) => d.key === through && d.type === "link");
+    if (!linkField?.targetTableKey) return [];
+    return linkableTables.find((t) => t.table_key === linkField.targetTableKey)?.fields ?? [];
+  }
 
   // Live preview of the entry form -- reuses FieldInput, the same
   // component the real "Add entry" form renders, so this is a faithful
@@ -283,7 +356,7 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
   }
 
   function addField() {
-    setDrafts((prev) => [...prev, { key: "", label: "", type: "text", unit: "", optionsText: "", required: false, locked: false }]);
+    setDrafts((prev) => [...prev, { key: "", label: "", type: "text", unit: "", optionsText: "", required: false, locked: false, targetTableKey: "", multiple: false, through: "", targetField: "", aggregate: "sum" }]);
   }
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -461,9 +534,47 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
             {(d.type === "select" || d.type === "multi_select") && (
               <input value={d.optionsText} onChange={(e) => updateDraft(i, { optionsText: e.target.value })} placeholder="Options, comma separated" required className={inputClass + " flex-1 min-w-[160px]"} />
             )}
-            <label className="flex items-center gap-1 text-xs text-muted-foreground">
-              <input type="checkbox" checked={d.required} onChange={(e) => updateDraft(i, { required: e.target.checked })} /> Required
-            </label>
+            {d.type === "link" && (
+              <>
+                <select value={d.targetTableKey} disabled={d.locked} onChange={(e) => updateDraft(i, { targetTableKey: e.target.value })} required className={inputClass} title={d.locked ? "A saved field's link target can't change" : "Which table this links to"}>
+                  <option value="" disabled>Link to…</option>
+                  {linkableTables.map((t) => (
+                    <option key={t.table_key} value={t.table_key}>{t.table_key === liveSelf.table_key ? `${t.name} (this table)` : t.name}</option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <input type="checkbox" checked={d.multiple} disabled={d.locked} onChange={(e) => updateDraft(i, { multiple: e.target.checked })} /> Multiple
+                </label>
+              </>
+            )}
+            {(d.type === "lookup" || d.type === "rollup") && (
+              <>
+                <select value={d.through} disabled={d.locked} onChange={(e) => updateDraft(i, { through: e.target.value, targetField: "" })} required className={inputClass} title="Which of this table's own link fields to read through">
+                  <option value="" disabled>Via link…</option>
+                  {drafts.filter((other) => other.type === "link" && other.key && other.key !== d.key).map((other) => (
+                    <option key={other.key} value={other.key}>{other.label}</option>
+                  ))}
+                </select>
+                <select value={d.targetField} disabled={d.locked || !d.through} onChange={(e) => updateDraft(i, { targetField: e.target.value })} required className={inputClass} title="Which field on the linked table to read">
+                  <option value="" disabled>Field…</option>
+                  {throughTargetFields(d.through).filter((f) => f.key).map((f) => (
+                    <option key={f.key} value={f.key}>{f.label}</option>
+                  ))}
+                </select>
+                {d.type === "rollup" && (
+                  <select value={d.aggregate} disabled={d.locked} onChange={(e) => updateDraft(i, { aggregate: e.target.value as RollupAggregate })} className={inputClass} title="How to combine multiple linked entries' values">
+                    {ROLLUP_AGGREGATES.map((a) => (
+                      <option key={a} value={a}>{ROLLUP_AGGREGATE_LABELS[a]}</option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )}
+            {d.type !== "lookup" && d.type !== "rollup" && (
+              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                <input type="checkbox" checked={d.required} onChange={(e) => updateDraft(i, { required: e.target.checked })} /> Required
+              </label>
+            )}
             {!d.locked && (
               <button type="button" onClick={() => removeDraft(i)} className="text-muted-foreground hover:text-destructive" aria-label="Remove field">
                 <X className="h-4 w-4" />
@@ -493,7 +604,7 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
               adding its own box to the existing flex-wrap layout. */}
           <fieldset disabled className="contents">
             <div className="flex flex-wrap items-end gap-2 bg-card border border-border rounded-lg p-4">
-              {fields.map((f, i) => (
+              {fields.filter((f) => f.type !== "lookup" && f.type !== "rollup").map((f, i) => (
                 <FieldInput key={i} field={f} value={previewValue(f)} onChange={(v) => setPreviewState((s) => ({ ...s, [f.key]: v }))} />
               ))}
               <button type="button" title="Preview only — save the table to actually add entries" className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium opacity-50 cursor-not-allowed">

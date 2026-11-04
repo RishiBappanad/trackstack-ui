@@ -8,7 +8,7 @@ import { TrackerTable } from "../components/TrackerTable.js";
 import { TrackerChart } from "../components/TrackerChart.js";
 import { TrackerList } from "../components/TrackerList.js";
 import { NumberRangeFilter, type NumberRange } from "../components/NumberRangeFilter.js";
-import { FieldInput } from "../components/FieldInput.js";
+import { FieldInput, type LinkOption } from "../components/FieldInput.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -18,20 +18,46 @@ const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
  * input widget differs, the string<->number conversion is identical. */
 type FormState = Record<string, string | boolean | string[]>;
 
+/** How a linked entry reads in a picker/display, for a table whose own
+ * `label_field` may or may not be set -- `table` is undefined for a
+ * cross-tracker target this app has no visibility into (link()'s own
+ * fetch still succeeds, there's just no field metadata to pick a label
+ * from), in which case every entry just falls back to its id. */
+function entryLabel(table: TableDef | undefined, entry: Entry): string {
+  if (table?.label_field) {
+    const v = entry.values[table.label_field];
+    if (v !== undefined && v !== "") return String(v);
+  }
+  if (table) {
+    for (const f of table.fields) {
+      const v = entry.values[f.key];
+      if (v !== undefined && v !== "" && (typeof v === "string" || typeof v === "number")) return String(v);
+    }
+  }
+  return entry.id;
+}
+
+/** A link field's own value is array-shaped exactly when `multiple` is
+ * set -- same array-vs-scalar split multi_select already has, just keyed
+ * off a per-field flag instead of the type alone. */
+function isArrayValued(f: FieldDef): boolean {
+  return f.type === "multi_select" || (f.type === "link" && !!f.multiple);
+}
+
 function initialState(fields: FieldDef[], values?: EntryValues): FormState {
   const state: FormState = {};
   for (const f of fields) {
     const v = values?.[f.key];
     if (f.type === "boolean") state[f.key] = v === true;
-    else if (f.type === "multi_select") state[f.key] = Array.isArray(v) ? v : [];
+    else if (isArrayValued(f)) state[f.key] = Array.isArray(v) ? v : [];
     else state[f.key] = v === undefined ? "" : String(v);
   }
   return state;
 }
 
 /** Empty inputs are omitted on create and sent as null on edit, which is
- * how the API clears an optional field -- multi_select's "empty" is a
- * zero-length array rather than an empty string, same rule otherwise. */
+ * how the API clears an optional field -- an array-valued field's "empty"
+ * is a zero-length array rather than an empty string, same rule otherwise. */
 function toValues(fields: FieldDef[], state: FormState, editing: boolean): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const f of fields) {
@@ -40,31 +66,38 @@ function toValues(fields: FieldDef[], state: FormState, editing: boolean): Recor
       values[f.key] = raw === true;
       continue;
     }
-    const empty = f.type === "multi_select" ? !Array.isArray(raw) || raw.length === 0 : raw === "" || raw === undefined;
+    const empty = isArrayValued(f) ? !Array.isArray(raw) || raw.length === 0 : raw === "" || raw === undefined;
     if (empty) {
       if (editing) values[f.key] = null;
       continue;
     }
-    values[f.key] = f.type === "multi_select" ? raw : f.type === "number" || f.type === "rating" ? Number(raw) : raw;
+    values[f.key] = isArrayValued(f) ? raw : f.type === "number" || f.type === "rating" ? Number(raw) : raw;
   }
   return values;
 }
 
 /** One form for creating an entry and editing one in place -- generated
- * entirely from the table's field list. */
-function EntryForm({ def, initial, submitLabel, onSubmit, onCancel }: {
+ * entirely from the table's field list. lookup/rollup fields are never
+ * part of this (trackstack-custom computes and rejects setting either
+ * directly); `linkOptionsByField` supplies each link field's pickable
+ * target entries, fetched once per table load by the caller (TrackerView
+ * -- this component has no network access of its own, same convention
+ * as FieldInput). */
+function EntryForm({ def, initial, linkOptionsByField, submitLabel, onSubmit, onCancel }: {
   def: TableDef;
   initial?: EntryValues;
+  linkOptionsByField: Record<string, LinkOption[]>;
   submitLabel: string;
   onSubmit: (values: Record<string, unknown>) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const [state, setState] = useState<FormState>(() => initialState(def.fields, initial));
+  const fields = def.fields.filter((f) => f.type !== "lookup" && f.type !== "rollup");
+  const [state, setState] = useState<FormState>(() => initialState(fields, initial));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await onSubmit(toValues(def.fields, state, !!initial));
-    if (!initial) setState(initialState(def.fields));
+    await onSubmit(toValues(fields, state, !!initial));
+    if (!initial) setState(initialState(fields));
   }
 
   return (
@@ -72,8 +105,8 @@ function EntryForm({ def, initial, submitLabel, onSubmit, onCancel }: {
       onSubmit={handleSubmit}
       className={onCancel ? "flex flex-wrap items-end gap-2 px-4 py-3" : "flex flex-wrap items-end gap-2 mb-6 bg-card border border-border rounded-lg p-4"}
     >
-      {def.fields.map((f) => (
-        <FieldInput key={f.key} field={f} value={state[f.key] ?? ""} onChange={(v) => setState((s) => ({ ...s, [f.key]: v }))} />
+      {fields.map((f) => (
+        <FieldInput key={f.key} field={f} value={state[f.key] ?? ""} onChange={(v) => setState((s) => ({ ...s, [f.key]: v }))} linkOptions={f.type === "link" ? linkOptionsByField[f.key] ?? [] : undefined} />
       ))}
       <button type="submit" className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium">{submitLabel}</button>
       {onCancel && (
@@ -214,6 +247,12 @@ export function TrackerView() {
   // filtering per view.
   const [qualFilters, setQualFilters] = useState<Record<string, Set<string>>>({});
   const [numFilters, setNumFilters] = useState<Record<string, NumberRange>>({});
+  // Each link field's pickable target entries (EntryForm's own picker)
+  // and a flat id->label map covering every link field's targets at once
+  // (renderView's display -- one entry could in principle be linked from
+  // more than one field, so this stays flat rather than per-field).
+  const [linkOptionsByField, setLinkOptionsByField] = useState<Record<string, LinkOption[]>>({});
+  const [linkLabels, setLinkLabels] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -223,11 +262,34 @@ export function TrackerView() {
         customApi(`/trackers/${slug}/tables/${tableKey}`, token),
         customApi(`/trackers/${slug}/tables/${tableKey}/entries`, token),
       ]);
+      const loadedTable = t as TableDef;
       setMeta(m as TrackerMeta);
       setTables(ts as { table_key: string; name: string }[]);
-      setTable(t as TableDef);
+      setTable(loadedTable);
       setEntries((e as Entry[]).slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)));
       setError(null);
+
+      // A second pass, after the table's own fields are known: one fetch
+      // per link field's target table (same-tracker only, per TableForm's
+      // own builder -- a cross-tracker target.tracker_slug isn't offered
+      // there yet, but resolved here all the same if one somehow exists).
+      const linkFields = loadedTable.fields.filter((f) => f.type === "link" && f.target);
+      const byField: Record<string, LinkOption[]> = {};
+      const labels: Record<string, string> = {};
+      await Promise.all(linkFields.map(async (f) => {
+        const targetSlug = f.target!.tracker_slug ?? slug;
+        try {
+          const targetEntries = (await customApi(`/trackers/${targetSlug}/tables/${f.target!.table_key}/entries`, token)) as Entry[];
+          const targetTable = targetSlug === slug ? (ts as TableDef[]).find((ot) => ot.table_key === f.target!.table_key) : undefined;
+          const options = targetEntries.map((te) => ({ id: te.id, label: entryLabel(targetTable, te) }));
+          byField[f.key] = options;
+          for (const o of options) labels[o.id] = o.label;
+        } catch {
+          byField[f.key] = []; // that target table/tracker is unreachable -- this field just offers nothing to pick, rather than breaking the whole page
+        }
+      }));
+      setLinkOptionsByField(byField);
+      setLinkLabels(labels);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load this table");
     }
@@ -342,9 +404,9 @@ export function TrackerView() {
         // another) re-rendered the SAME mounted instance with a new
         // `initial` prop that nothing ever re-read, leaving every field
         // blank instead of pre-filled.
-        <EntryForm key={editingEntry.id} def={table} initial={editingEntry.values} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
+        <EntryForm key={editingEntry.id} def={table} initial={editingEntry.values} linkOptionsByField={linkOptionsByField} submitLabel="Save" onCancel={() => setEditingId(null)} onSubmit={(v) => save(editingEntry.id, v)} />
       ) : (
-        <EntryForm key="__create__" def={table} submitLabel="Add" onSubmit={create} />
+        <EntryForm key="__create__" def={table} linkOptionsByField={linkOptionsByField} submitLabel="Add" onSubmit={create} />
       )}
 
       {(qualFields.length > 0 || numFields.length > 0) && (
@@ -384,7 +446,7 @@ export function TrackerView() {
         </div>
       )}
 
-      {renderView(table, slug, tableKey, filteredEntries, setEditingId, remove, emptyMessage)}
+      {renderView(table, slug, tableKey, filteredEntries, linkLabels, setEditingId, remove, emptyMessage)}
     </div>
   );
 }
@@ -397,11 +459,11 @@ export function TrackerView() {
  * (above), uniformly across all three views, rather than inline per row
  * -- a table row swapped for a wrapping form reads as broken, and a
  * chart has no row to swap in the first place. */
-function renderView(table: TableDef, trackerSlug: string, tableKey: string, entries: Entry[], onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
+function renderView(table: TableDef, trackerSlug: string, tableKey: string, entries: Entry[], linkLabels: Record<string, string>, onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
   const view = table.ui_config?.view ?? "list";
 
-  if (view === "table") return <TrackerTable def={table} storageKey={`${trackerSlug}:${tableKey}`} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  if (view === "table") return <TrackerTable def={table} storageKey={`${trackerSlug}:${tableKey}`} entries={entries} linkLabels={linkLabels} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
   if (view === "chart") return <TrackerChart def={table} entries={entries} emptyMessage={emptyMessage} />;
 
-  return <TrackerList def={table} entries={entries} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  return <TrackerList def={table} entries={entries} linkLabels={linkLabels} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
 }

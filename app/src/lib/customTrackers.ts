@@ -11,24 +11,56 @@ import type { IconName } from "trackstack-ui";
 
 /** Mirrors trackstack-custom's definitions.ts -- the wire format of a
  * user-made tracker. Kept as plain types (no shared code across repos,
- * CLAUDE.md Tenet #1); the backend is the source of truth for validation. */
-export const FIELD_TYPES = ["text", "long_text", "number", "boolean", "date", "select", "multi_select", "rating"] as const;
+ * CLAUDE.md Tenet #1); the backend is the source of truth for validation.
+ * `link`/`lookup`/`rollup` added Phase 6b (MULTI_TABLE_TRACKERS_SPEC.md) --
+ * FIELD_TYPES/RAW_FIELD_TYPES split the same way the backend's is, since a
+ * raw field's own type picker (TableForm) must never offer the three
+ * computed/relational kinds a RAW field can't be. */
+export const RAW_FIELD_TYPES = ["text", "long_text", "number", "boolean", "date", "select", "multi_select", "rating"] as const;
+export type RawFieldType = (typeof RAW_FIELD_TYPES)[number];
+
+export const FIELD_TYPES = [...RAW_FIELD_TYPES, "link", "lookup", "rollup"] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   text: "Text", long_text: "Long text", number: "Number", boolean: "Yes/No",
   date: "Date", select: "Choice", multi_select: "Tags", rating: "Rating",
+  link: "Link", lookup: "Lookup", rollup: "Rollup",
+};
+
+export const ROLLUP_AGGREGATES = ["sum", "count", "avg", "min", "max"] as const;
+export type RollupAggregate = (typeof ROLLUP_AGGREGATES)[number];
+
+export const ROLLUP_AGGREGATE_LABELS: Record<RollupAggregate, string> = {
+  sum: "Sum", count: "Count", avg: "Average", min: "Minimum", max: "Maximum",
 };
 
 export const RATING_MAX = 5;
+
+/** `tracker_slug` omitted means "a sibling table in this same tracker" --
+ * the only option TableForm's builder offers for now (cross-tracker
+ * targets are a later, "advanced" step -- see this file's `linkTargetLabel`). */
+export interface LinkTarget {
+  table_key: string;
+  tracker_slug?: string;
+}
 
 export interface FieldDef {
   key: string;
   label: string;
   type: FieldType;
+  // Raw field types only:
   unit?: string;
   options?: string[];
   required?: boolean;
+  // Link fields only:
+  target?: LinkTarget;
+  multiple?: boolean;
+  // Lookup/Rollup fields only. `through` names a link field's key on this
+  // same table; `target_field` names a field on that link's target table.
+  through?: string;
+  target_field?: string;
+  aggregate?: RollupAggregate;
 }
 
 /** MULTI_TABLE_TRACKERS_SPEC.md's Tracker -> Table -> Entry model (Phase
@@ -130,8 +162,15 @@ export function uniqueSlug(text: string, taken: string[]): string {
   }
 }
 
-/** How an entry's values read as one line of text in a list. */
-export function formatValue(field: FieldDef, value: string | number | boolean | string[] | undefined): string {
+/** How an entry's values read as one line of text in a list. `linkLabels`
+ * resolves a link field's stored id(s) to the linked entry's own label --
+ * the caller (TrackerView) fetches the target table's current entries
+ * once per load and builds this map; omitted/missing falls back to the
+ * raw id, same as before this map existed. A lookup/rollup field's value
+ * arrives already computed (trackstack-custom's own resolveComputedFields
+ * merges it into the entry's `values` at read time), so there's nothing
+ * extra to resolve for either -- they just print like any other value. */
+export function formatValue(field: FieldDef, value: string | number | boolean | string[] | undefined, linkLabels?: Record<string, string>): string {
   if (value === undefined) return "";
   if (field.type === "boolean") return value ? "Yes" : "No";
   if (field.type === "number") return field.unit ? `${value} ${field.unit}` : String(value);
@@ -140,6 +179,10 @@ export function formatValue(field: FieldDef, value: string | number | boolean | 
   if (field.type === "long_text") {
     const text = String(value);
     return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  }
+  if (field.type === "link") {
+    const ids = Array.isArray(value) ? value : [String(value)];
+    return ids.map((id) => linkLabels?.[id] ?? id).join(", ");
   }
   return String(value);
 }
