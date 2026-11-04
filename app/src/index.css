@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @import "tailwindcss";
 
@@ -65,30 +65,34 @@
 }
 
 :root {
-  /* Dark theme with a violet accent -- distinct from nutrition's blue and
-     finance's own accent, since this is the cross-app "center," not one
-     more tracker among equals. */
-  --background: 250 22% 9%;
-  --foreground: 250 15% 92%;
+  /* Light theme with an indigo accent, decided 2026-11-04 (replacing the
+     original dark-only theme -- see lib/theme.ts's doc comment on why
+     the neutral family no longer tracks the accent hue). These values
+     are cssVars(DEFAULT_HUE, DEFAULT_LIGHTNESS) from theme.ts, written
+     out literally so first paint (before applyTheme runs) already
+     matches -- an account that never opens the Appearance page sees
+     zero change between this and what applyTheme(null, null) would set. */
+  --background: 48 20% 95%;
+  --foreground: 48 15% 13%;
 
-  --border: 250 15% 18%;
-  --input: 250 15% 18%;
-  --ring: 258 85% 66%;
+  --border: 48 15% 86%;
+  --input: 48 15% 86%;
+  --ring: 231 78% 57%;
 
-  --card: 250 20% 12%;
-  --card-foreground: 250 15% 92%;
+  --card: 48 20% 99%;
+  --card-foreground: 48 15% 13%;
 
-  --primary: 258 85% 66%; /* Violet */
+  --primary: 231 78% 57%; /* Indigo */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 250 15% 18%;
-  --secondary-foreground: 250 15% 85%;
+  --secondary: 48 15% 91%;
+  --secondary-foreground: 48 15% 20%;
 
-  --muted: 250 15% 16%;
-  --muted-foreground: 250 10% 58%;
+  --muted: 48 15% 92%;
+  --muted-foreground: 48 8% 35%;
 
-  --accent: 258 55% 22%;
-  --accent-foreground: 258 80% 88%;
+  --accent: 231 70% 94%;
+  --accent-foreground: 231 70% 40%;
 
   --destructive: 6 70% 55%;
   --destructive-foreground: 0 0% 100%;
@@ -96,18 +100,18 @@
   --success: 152 45% 45%;
   --success-foreground: 0 0% 100%;
 
-  --sidebar: 250 25% 7%;
-  --sidebar-foreground: 250 12% 78%;
-  --sidebar-border: 250 20% 14%;
-  --sidebar-ring: 258 85% 66%;
+  --sidebar: 48 20% 99%;
+  --sidebar-foreground: 48 15% 20%;
+  --sidebar-border: 48 15% 86%;
+  --sidebar-ring: 231 78% 57%;
 
-  --switcher: 250 28% 6%;
-  --switcher-foreground: 250 12% 60%;
-  --switcher-border: 250 22% 11%;
-  --switcher-active: 258 55% 20%;
-  --switcher-active-foreground: 258 80% 88%;
+  --switcher: 48 20% 99%;
+  --switcher-foreground: 48 10% 35%;
+  --switcher-border: 48 15% 86%;
+  --switcher-active: 231 70% 94%;
+  --switcher-active-foreground: 231 70% 40%;
 
-  --app-font-sans: 'Plus Jakarta Sans', sans-serif;
+  --app-font-sans: 'Inter', sans-serif;
   --app-font-mono: 'JetBrains Mono', monospace;
 
   --radius: 0.6rem;
