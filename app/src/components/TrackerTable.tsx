@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
-import { formatValue, type Entry, type FieldDef, type TableDef } from "../lib/customTrackers.js";
+import { type Entry, type FieldDef, type TableDef } from "../lib/customTrackers.js";
+import { FieldValue, type LinkTarget } from "./FieldInput.js";
 
 // A live, per-viewer column filter -- distinct from `ui_config.columns`,
 // which is the table's own configured default, set once at setup time
@@ -62,17 +63,17 @@ function clearColumnPref(slug: string): void {
  * time choice and the viewing-time choice are deliberately two different
  * things, not one setting with two editors. */
 export function TrackerTable({
-  def, storageKey, entries, linkLabels = {}, onEdit, onDelete, emptyMessage = "No entries yet.",
+  def, storageKey, entries, linkTargets = {}, onEdit, onDelete, emptyMessage = "No entries yet.",
 }: {
   def: TableDef;
   // `${trackerSlug}:${tableKey}`, or a disposable key like "__preview__"
   // for a preview with nothing real to persist (see TableForm).
   storageKey: string;
   entries: Entry[];
-  // Resolves a link field's own stored id(s) to the linked entry's label
-  // -- see formatValue's own doc comment. Defaults to {} for the same
-  // preview callers the two props below are already optional for.
-  linkLabels?: Record<string, string>;
+  // Resolves a link field's own stored id(s) to a navigable chip -- see
+  // FieldValue's own doc comment. Defaults to {} for the same preview
+  // callers the two props below are already optional for.
+  linkTargets?: Record<string, LinkTarget>;
   // Optional so a preview with no real entries to act on (TableForm's own
   // Display preview) can render this exact component with neither -- the
   // action column simply doesn't appear, same treatment as TrackerList.
@@ -180,7 +181,7 @@ export function TrackerTable({
               <tr key={entry.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                 {columns.map((f) => (
                   <td key={f.key} className={"px-3 py-2 whitespace-nowrap " + (f.type === "number" ? "font-mono" : "")}>
-                    {formatValue(f, entry.values[f.key], linkLabels)}
+                    <FieldValue field={f} value={entry.values[f.key]} linkTargets={linkTargets} />
                   </td>
                 ))}
                 {showOccurred && <td className="px-3 py-2 whitespace-nowrap text-muted-foreground font-mono">{new Date(entry.occurred_at).toLocaleDateString()}</td>}

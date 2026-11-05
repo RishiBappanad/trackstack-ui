@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute, useSearch } from "wouter";
 import { useTrackStackAuth, QualitativeFieldFilter } from "trackstack-ui";
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../lib/api.js";
@@ -8,7 +8,7 @@ import { TrackerTable } from "../components/TrackerTable.js";
 import { TrackerChart } from "../components/TrackerChart.js";
 import { TrackerList } from "../components/TrackerList.js";
 import { NumberRangeFilter, type NumberRange } from "../components/NumberRangeFilter.js";
-import { FieldInput, type LinkOption } from "../components/FieldInput.js";
+import { FieldInput, type LinkOption, type LinkTarget } from "../components/FieldInput.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -195,6 +195,7 @@ export function TrackerView() {
   const [, navigate] = useLocation();
   const slug = params?.slug ?? "";
   const tableKey = params?.tableKey ?? "";
+  const search = useSearch();
   const [meta, setMeta] = useState<TrackerMeta | null>(null);
   const [tables, setTables] = useState<{ table_key: string; name: string }[]>([]);
   const [table, setTable] = useState<TableDef | null>(null);
@@ -213,11 +214,12 @@ export function TrackerView() {
   const [qualFilters, setQualFilters] = useState<Record<string, Set<string>>>({});
   const [numFilters, setNumFilters] = useState<Record<string, NumberRange>>({});
   // Each link field's pickable target entries (EntryForm's own picker)
-  // and a flat id->label map covering every link field's targets at once
-  // (renderView's display -- one entry could in principle be linked from
-  // more than one field, so this stays flat rather than per-field).
+  // and a flat id->target map covering every link field's targets at once
+  // (renderView's display, via FieldValue -- one entry could in principle
+  // be linked from more than one field, so this stays flat rather than
+  // per-field; carries enough to build an href, not just a label).
   const [linkOptionsByField, setLinkOptionsByField] = useState<Record<string, LinkOption[]>>({});
-  const [linkLabels, setLinkLabels] = useState<Record<string, string>>({});
+  const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
 
   const load = useCallback(async () => {
     try {
@@ -240,21 +242,24 @@ export function TrackerView() {
       // there yet, but resolved here all the same if one somehow exists).
       const linkFields = loadedTable.fields.filter((f) => f.type === "link" && f.target);
       const byField: Record<string, LinkOption[]> = {};
-      const labels: Record<string, string> = {};
+      const targets: Record<string, LinkTarget> = {};
       await Promise.all(linkFields.map(async (f) => {
         const targetSlug = f.target!.tracker_slug ?? slug;
+        const targetTableKey = f.target!.table_key;
         try {
-          const targetEntries = (await customApi(`/trackers/${targetSlug}/tables/${f.target!.table_key}/entries`, token)) as Entry[];
-          const targetTable = targetSlug === slug ? (ts as TableDef[]).find((ot) => ot.table_key === f.target!.table_key) : undefined;
+          const targetEntries = (await customApi(`/trackers/${targetSlug}/tables/${targetTableKey}/entries`, token)) as Entry[];
+          const targetTable = targetSlug === slug ? (ts as TableDef[]).find((ot) => ot.table_key === targetTableKey) : undefined;
           const options = targetEntries.map((te) => ({ id: te.id, label: entryLabel(targetTable, te) }));
           byField[f.key] = options;
-          for (const o of options) labels[o.id] = o.label;
+          for (const o of options) {
+            targets[o.id] = { label: o.label, trackerSlug: targetSlug, tableKey: targetTableKey };
+          }
         } catch {
           byField[f.key] = []; // that target table/tracker is unreachable -- this field just offers nothing to pick, rather than breaking the whole page
         }
       }));
       setLinkOptionsByField(byField);
-      setLinkLabels(labels);
+      setLinkTargets(targets);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load this table");
     }
@@ -262,10 +267,23 @@ export function TrackerView() {
 
   useEffect(() => {
     load();
-    setEditingId(null);
     setQualFilters({});
     setNumFilters({});
   }, [load]);
+
+  // `?edit=<id>` -- a deep link into this exact entry's edit form, landed
+  // on from a FieldValue link chip elsewhere (see FieldInput.tsx's own
+  // doc comment). Only opens an id this table's own `entries` actually
+  // has, so a stale/foreign id just falls through to the ordinary create
+  // form instead of a blank edit view. Deliberately NOT reset by the
+  // `load()` effect above (which still clears the two filter states on
+  // every navigation) -- editingId needs to survive the entries reload
+  // that effect triggers, or the deep link it's setting up for would
+  // immediately get wiped the instant data arrives.
+  useEffect(() => {
+    const editParam = new URLSearchParams(search).get("edit");
+    if (editParam && entries.some((e) => e.id === editParam)) setEditingId(editParam);
+  }, [search, entries]);
 
   async function run(action: () => Promise<unknown>, failure: string) {
     try {
@@ -412,7 +430,7 @@ export function TrackerView() {
         </div>
       )}
 
-      {renderView(table, slug, tableKey, filteredEntries, linkLabels, setEditingId, remove, emptyMessage)}
+      {renderView(table, slug, tableKey, filteredEntries, linkTargets, setEditingId, remove, emptyMessage)}
     </div>
   );
 }
@@ -425,11 +443,11 @@ export function TrackerView() {
  * (above), uniformly across all three views, rather than inline per row
  * -- a table row swapped for a wrapping form reads as broken, and a
  * chart has no row to swap in the first place. */
-function renderView(table: TableDef, trackerSlug: string, tableKey: string, entries: Entry[], linkLabels: Record<string, string>, onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
+function renderView(table: TableDef, trackerSlug: string, tableKey: string, entries: Entry[], linkTargets: Record<string, LinkTarget>, onEdit: (id: string) => void, onDelete: (id: string) => Promise<void>, emptyMessage: string) {
   const view = table.ui_config?.view ?? "list";
 
-  if (view === "table") return <TrackerTable def={table} storageKey={`${trackerSlug}:${tableKey}`} entries={entries} linkLabels={linkLabels} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  if (view === "table") return <TrackerTable def={table} storageKey={`${trackerSlug}:${tableKey}`} entries={entries} linkTargets={linkTargets} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
   if (view === "chart") return <TrackerChart def={table} entries={entries} emptyMessage={emptyMessage} />;
 
-  return <TrackerList def={table} entries={entries} linkLabels={linkLabels} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
+  return <TrackerList def={table} entries={entries} linkTargets={linkTargets} onEdit={onEdit} onDelete={onDelete} emptyMessage={emptyMessage} />;
 }

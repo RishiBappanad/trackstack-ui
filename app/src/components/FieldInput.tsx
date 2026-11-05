@@ -1,4 +1,5 @@
-import { RATING_MAX, type FieldDef } from "../lib/customTrackers.js";
+import { Link } from "wouter";
+import { formatValue, RATING_MAX, type FieldDef } from "../lib/customTrackers.js";
 
 const inputClass = "bg-secondary border border-border rounded-md px-3 py-2 text-sm";
 
@@ -154,4 +155,51 @@ export function FieldInput({ field, value, onChange, linkOptions }: { field: Fie
       )}
     </label>
   );
+}
+
+export interface LinkTarget {
+  label: string;
+  trackerSlug: string;
+  tableKey: string;
+}
+
+/** The read-only counterpart to FieldInput -- how a field's value shows
+ * up in a list/table/snapshot row. Every type but `link` is just
+ * formatValue's plain string; a link field renders each linked id as a
+ * real navigable chip instead (landing on `?edit=<id>`, which TrackerView
+ * reads to open that exact entry in its own edit form -- see its own
+ * `useSearch()` usage), so "which pull-up entry is this Workout linked
+ * to" is one click away instead of a label you can't act on.
+ * `linkTargets` is the same per-id resolution map TrackerView already
+ * builds for FieldInput's own link picker, just keyed with enough to
+ * build an href (label alone, as plain formatValue's `linkLabels` takes,
+ * isn't enough). Missing from the map (an id with no resolved target,
+ * e.g. the target table became unreachable) falls back to the bare id as
+ * plain text, same degrade-gracefully rule the rest of this link
+ * machinery already follows. */
+export function FieldValue({ field, value, linkTargets }: { field: FieldDef; value: string | number | boolean | string[] | undefined; linkTargets?: Record<string, LinkTarget> }) {
+  if (field.type === "link" && linkTargets) {
+    const ids = Array.isArray(value) ? value : value ? [String(value)] : [];
+    if (ids.length === 0) return <span className="text-muted-foreground">—</span>;
+    return (
+      <>
+        {ids.map((id, i) => {
+          const target = linkTargets[id];
+          return (
+            <span key={id}>
+              {target ? (
+                <Link href={`/trackers/${target.trackerSlug}/tables/${target.tableKey}?edit=${id}`} className="text-primary hover:underline">
+                  {target.label}
+                </Link>
+              ) : (
+                id
+              )}
+              {i < ids.length - 1 ? ", " : ""}
+            </span>
+          );
+        })}
+      </>
+    );
+  }
+  return <>{formatValue(field, value)}</>;
 }

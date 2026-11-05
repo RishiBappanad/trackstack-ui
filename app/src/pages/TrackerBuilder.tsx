@@ -406,7 +406,7 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
     category_field: categoryField || null,
     label_field: labelField || null,
     date_field: dateField || null,
-    ui_config: { view: previewView, accent: accent || null, columns: previewView === "table" ? columns : [] },
+    ui_config: { view: previewView, accent: accent || null, columns },
   };
   const previewEntries = sampleEntries(previewFields);
 
@@ -415,7 +415,7 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
     setError(null);
     setSaving(true);
     const effectiveView = view === "chart" && !chartEligible ? "list" : view;
-    const uiConfig = effectiveView !== "list" || accent || columns.length ? { view: effectiveView, accent: accent || null, columns: effectiveView === "table" ? columns : [] } : null;
+    const uiConfig = effectiveView !== "list" || accent || columns.length ? { view: effectiveView, accent: accent || null, columns } : null;
     const body = {
       name: name.trim(),
       description: description.trim(),
@@ -686,9 +686,9 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
           ))}
         </div>
 
-        {view === "table" && fields.length > 0 && (
+        {fields.length > 0 && (
           <div className="grid gap-1">
-            <span className="text-sm">Table columns</span>
+            <span className="text-sm">Fields to show</span>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               {fields.map((f) => (
                 <label key={f.key} className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -701,7 +701,15 @@ function TableForm({ trackerSlug, existing, prefill, onSaved }: {
                 </label>
               ))}
             </div>
-            <span className="text-xs text-muted-foreground">Leave none checked to show every field.</span>
+            {/* The one config surface for "which fields show" everywhere
+                this table's entries render beyond their title/amount/date
+                roles -- this table's own Table-view columns AND this
+                tracker's Home snapshot entry rows (TrackerHome.tsx's
+                extraFields()) both read the same `ui_config.columns`,
+                rather than each view getting its own picker. Not gated to
+                "Table" view anymore -- a table shown as List/Chart on its
+                own page still wants a say in what Home shows per entry. */}
+            <span className="text-xs text-muted-foreground">Leave none checked to show every field. Also controls which fields show per entry on this tracker's Home page.</span>
           </div>
         )}
 

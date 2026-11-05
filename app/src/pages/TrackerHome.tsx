@@ -3,10 +3,40 @@ import { Link, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { Plus } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { customApi, formatValue, type Entry, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
+import { customApi, formatValue, type Entry, type FieldDef, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
+import { FieldValue, type LinkTarget } from "../components/FieldInput.js";
 import { TableTabs, entryLabel } from "./TrackerView.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
+
+export type Granularity = "day" | "week" | "month";
+
+// Remembered per-viewer, per-tracker -- same "setup-time default lives on
+// the table/tracker, viewing-time choice lives in THIS browser" split
+// TrackerTable's column picker already established (see its own
+// COLUMN_PREF_PREFIX doc comment). There's no setup-time default for this
+// yet (every tracker starts on "week"); that's a deliberate, flagged
+// follow-up -- see MULTI_TABLE_TRACKERS_SPEC.md -- not an oversight, since
+// it needs a small backend addition (a column on TableDef) this pass
+// doesn't touch.
+const GRANULARITY_PREF_PREFIX = "trackstack:home-granularity:";
+
+function loadGranularityPref(slug: string): Granularity | null {
+  try {
+    const raw = localStorage.getItem(GRANULARITY_PREF_PREFIX + slug);
+    return raw === "day" || raw === "week" || raw === "month" ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveGranularityPref(slug: string, g: Granularity): void {
+  try {
+    localStorage.setItem(GRANULARITY_PREF_PREFIX + slug, g);
+  } catch {
+    // best-effort only
+  }
+}
 
 function startOfWeek(d: Date): Date {
   const date = new Date(d);
@@ -22,13 +52,44 @@ function addDays(d: Date, n: number): Date {
   return date;
 }
 
+/** The first instant of the period containing `d`, for a given
+ * granularity -- the one thing day/week/month views disagree on; every
+ * other calculation (end, prev/next, label) derives from this. */
+function startOfPeriod(d: Date, granularity: Granularity): Date {
+  if (granularity === "week") return startOfWeek(d);
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  if (granularity === "month") date.setDate(1);
+  return date;
+}
+
+function endOfPeriod(start: Date, granularity: Granularity): Date {
+  if (granularity === "day") return start;
+  if (granularity === "week") return addDays(start, 6);
+  return new Date(start.getFullYear(), start.getMonth() + 1, 0); // month's last day
+}
+
+function shiftPeriod(start: Date, granularity: Granularity, dir: 1 | -1): Date {
+  const date = new Date(start);
+  if (granularity === "day") date.setDate(date.getDate() + dir);
+  else if (granularity === "week") date.setDate(date.getDate() + dir * 7);
+  else date.setMonth(date.getMonth() + dir);
+  return startOfPeriod(date, granularity);
+}
+
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function weekLabel(mon: Date, sun: Date): string {
+function periodLabel(start: Date, end: Date, granularity: Granularity): string {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${mon.toLocaleDateString(undefined, opts)} – ${sun.toLocaleDateString(undefined, opts)}`;
+  if (granularity === "day") return start.toLocaleDateString(undefined, { weekday: "short", ...opts });
+  if (granularity === "month") return start.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  return `${start.toLocaleDateString(undefined, opts)} – ${end.toLocaleDateString(undefined, opts)}`;
+}
+
+function currentPeriodLabel(granularity: Granularity): string {
+  return granularity === "day" ? "Today" : granularity === "month" ? "This month" : "This week";
 }
 
 /** Sums an /aggregations/by_category response across every category --
@@ -61,14 +122,29 @@ function groupByCategory(entries: Entry[], table: TableDef): { category: string;
   return order.map((category) => ({ category, entries: groups.get(category)! }));
 }
 
+/** Which of this table's fields show on a Home entry row beyond the
+ * title/amount/date it already shows separately. `ui_config.columns` is
+ * the SAME per-table config TrackerTable's Tier B view reads (set from
+ * TableForm's "edit tracker" UI) -- reused here rather than inventing a
+ * second config surface, per the user's own ask to control this "on the
+ * edit tracker feature." Unset shows every other field; set respects it
+ * as a whitelist, in field-definition order (not the configured order --
+ * see TrackerTable's own identical choice and its doc comment for why). */
+function extraFields(table: TableDef): FieldDef[] {
+  const roleKeys = new Set([table.label_field, table.amount_field, table.date_field].filter((k): k is string => !!k));
+  const configured = table.ui_config?.columns;
+  const allowed = configured?.length ? new Set(configured) : null;
+  return table.fields.filter((f) => !roleKeys.has(f.key) && (!allowed || allowed.has(f.key)));
+}
+
 interface PeriodStats {
   total: number;
   unit: string;
   prevTotal: number;
 }
 
-/** `/trackers/:slug` -- the tracker's own daily/weekly snapshot: the
- * default layout's "Home" (MULTI_TABLE_TRACKERS_SPEC.md's mockup
+/** `/trackers/:slug` -- the tracker's own daily/weekly/monthly snapshot:
+ * the default layout's "Home" (MULTI_TABLE_TRACKERS_SPEC.md's mockup
  * discussion). Scoped to the tracker's FIRST table (there's no explicit
  * "default table" flag on TrackerMeta -- adding one is deferred until a
  * tracker with a real need for picking a different one shows up, Tenet
@@ -81,14 +157,22 @@ export function TrackerHome() {
   const slug = params?.slug ?? "";
   const [meta, setMeta] = useState<TrackerMeta | null>(null);
   const [tables, setTables] = useState<TableDef[]>([]);
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [granularity, setGranularity] = useState<Granularity>(() => loadGranularityPref(slug) ?? "week");
+  const [periodStart, setPeriodStart] = useState(() => startOfPeriod(new Date(), loadGranularityPref(slug) ?? "week"));
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
   const [stats, setStats] = useState<PeriodStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
+  const periodEnd = useMemo(() => endOfPeriod(periodStart, granularity), [periodStart, granularity]);
   const primary = tables[0];
+
+  function changeGranularity(g: Granularity) {
+    setGranularity(g);
+    saveGranularityPref(slug, g);
+    setPeriodStart(startOfPeriod(new Date(), g));
+  }
 
   const load = useCallback(async () => {
     if (!slug) return;
@@ -102,14 +186,17 @@ export function TrackerHome() {
       const table = tablesData[0];
       if (!table) {
         setEntries([]);
+        setLinkTargets({});
         setStats(null);
         setLoaded(true);
         setError(null);
         return;
       }
 
-      const start = isoDate(weekStart);
-      const end = isoDate(weekEnd);
+      const start = isoDate(periodStart);
+      const end = isoDate(periodEnd);
+      const prevStart = shiftPeriod(periodStart, granularity, -1);
+      const prevEnd = endOfPeriod(prevStart, granularity);
       const eligibleForStats = !!table.amount_field && table.summable;
 
       // The aggregations endpoint 400s outright for a non-summable
@@ -120,15 +207,41 @@ export function TrackerHome() {
       const [entriesRes, curAgg, prevAgg] = await Promise.all([
         customApi(`/trackers/${slug}/tables/${table.table_key}/entries?start=${start}&end=${end}`, token),
         eligibleForStats ? customApi(`/aggregations/by_category?start=${start}&end=${end}&owner_type=custom_${slug}_${table.table_key}`, token) : Promise.resolve(null),
-        eligibleForStats ? customApi(`/aggregations/by_category?start=${isoDate(addDays(weekStart, -7))}&end=${isoDate(addDays(weekEnd, -7))}&owner_type=custom_${slug}_${table.table_key}`, token) : Promise.resolve(null),
+        eligibleForStats ? customApi(`/aggregations/by_category?start=${isoDate(prevStart)}&end=${isoDate(prevEnd)}&owner_type=custom_${slug}_${table.table_key}`, token) : Promise.resolve(null),
       ]);
-      setEntries((entriesRes as Entry[]).slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)));
+      const loadedEntries = (entriesRes as Entry[]).slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+      setEntries(loadedEntries);
       if (eligibleForStats) {
         const cur = sumAggregation(curAgg);
         setStats({ total: cur.total, unit: cur.unit, prevTotal: sumAggregation(prevAgg).total });
       } else {
         setStats(null);
       }
+
+      // Link-field resolution for this table's own entries -- same
+      // per-id target map TrackerView builds for its table/list views, so
+      // a link field's value on Home is just as clickable there as
+      // anywhere else (FieldValue's own doc comment covers the mechanism).
+      // Scoped to only the fields Home actually renders (extraFields),
+      // not every link field this table has, since lookup/rollup-through
+      // fields that never show here need nothing resolved.
+      const linkFields = extraFields(table).filter((f) => f.type === "link" && f.target);
+      const targets: Record<string, LinkTarget> = {};
+      await Promise.all(linkFields.map(async (f) => {
+        const targetSlug = f.target!.tracker_slug ?? slug;
+        const targetTableKey = f.target!.table_key;
+        try {
+          const targetEntries = (await customApi(`/trackers/${targetSlug}/tables/${targetTableKey}/entries`, token)) as Entry[];
+          const targetTable = targetSlug === slug ? tablesData.find((ot) => ot.table_key === targetTableKey) : undefined;
+          for (const te of targetEntries) {
+            targets[te.id] = { label: entryLabel(targetTable, te), trackerSlug: targetSlug, tableKey: targetTableKey };
+          }
+        } catch {
+          // that target table/tracker is unreachable -- this field's
+          // values just fall back to their raw id, same as TrackerView.
+        }
+      }));
+      setLinkTargets(targets);
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load this tracker");
@@ -136,7 +249,7 @@ export function TrackerHome() {
       setLoaded(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, token, weekStart]);
+  }, [slug, token, periodStart, granularity]);
 
   useEffect(() => {
     load();
@@ -161,6 +274,7 @@ export function TrackerHome() {
   }
 
   const amountField = primary.fields.find((f) => f.key === primary.amount_field);
+  const rowFields = extraFields(primary);
   const groups = groupByCategory(entries, primary);
   const delta = stats && stats.prevTotal > 0 ? Math.round(((stats.total - stats.prevTotal) / stats.prevTotal) * 100) : null;
 
@@ -173,20 +287,33 @@ export function TrackerHome() {
 
       <TableTabs trackerSlug={slug} tables={tables} />
 
-      {/* Week nav -- day-level navigation and a jump-to-any-date calendar
-          are both deferred; this is the week-only slice of the mockup's
-          design, not the full thing yet. */}
-      <div className="flex items-center gap-3 mb-6">
-        <button type="button" onClick={() => setWeekStart((w) => addDays(w, -7))} className="w-8 h-8 rounded-md border border-border text-sm hover:bg-secondary" aria-label="Previous week">
+      {/* Day-level navigation lives inside the granularity toggle itself
+          now (switching to "Day" re-bases the period to today); a
+          jump-to-any-date calendar is still deferred. */}
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <button type="button" onClick={() => setPeriodStart((s) => shiftPeriod(s, granularity, -1))} className="w-8 h-8 rounded-md border border-border text-sm hover:bg-secondary" aria-label="Previous period">
           ‹
         </button>
-        <div className="text-sm font-medium">{weekLabel(weekStart, weekEnd)}</div>
-        <button type="button" onClick={() => setWeekStart((w) => addDays(w, 7))} className="w-8 h-8 rounded-md border border-border text-sm hover:bg-secondary" aria-label="Next week">
+        <div className="text-sm font-medium">{periodLabel(periodStart, periodEnd, granularity)}</div>
+        <button type="button" onClick={() => setPeriodStart((s) => shiftPeriod(s, granularity, 1))} className="w-8 h-8 rounded-md border border-border text-sm hover:bg-secondary" aria-label="Next period">
           ›
         </button>
-        <button type="button" onClick={() => setWeekStart(startOfWeek(new Date()))} className="text-xs text-muted-foreground hover:text-foreground ml-1">
-          This week
+        <button type="button" onClick={() => setPeriodStart(startOfPeriod(new Date(), granularity))} className="text-xs text-muted-foreground hover:text-foreground ml-1">
+          {currentPeriodLabel(granularity)}
         </button>
+
+        <div className="flex items-center gap-0.5 ml-auto bg-secondary rounded-md p-0.5">
+          {(["day", "week", "month"] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => changeGranularity(g)}
+              className={"px-2.5 py-1 text-xs rounded capitalize " + (g === granularity ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground")}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
       </div>
 
       {stats && (
@@ -212,9 +339,20 @@ export function TrackerHome() {
           <div key={g.category}>
             {g.category && <div className="px-4 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{g.category}</div>}
             {g.entries.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0">
-                <div className="text-sm">{entryLabel(primary, entry)}</div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div key={entry.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0 gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm">{entryLabel(primary, entry)}</div>
+                  {rowFields.length > 0 && (
+                    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                      {rowFields.map((f) => (
+                        <span key={f.key}>
+                          <span className="opacity-70">{f.label}:</span> <FieldValue field={f} value={entry.values[f.key]} linkTargets={linkTargets} />
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
                   {amountField && <span>{formatValue(amountField, entry.values[amountField.key])}</span>}
                   <span>{new Date(entry.occurred_at).toLocaleDateString()}</span>
                 </div>
