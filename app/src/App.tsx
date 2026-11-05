@@ -4,7 +4,9 @@ import { useTrackStackAuth, useCurrentUser, useAppRegistry, AppSwitcher, MobileA
 import type { TrackStackApp, AppSwitcherExtraItem } from "trackstack-ui";
 import { usePinnedTrackers, ICON_COMPONENTS, CUSTOM_BASE_URL } from "./lib/customTrackers.js";
 import { applyTheme } from "./lib/theme.js";
+import { TrackerChromeContext } from "./lib/trackerChromeContext.js";
 import { Login } from "./components/Login.js";
+import { TrackerChrome } from "./components/TrackerChrome.js";
 import { Home } from "./pages/Home.js";
 import { Todos } from "./pages/Todos.js";
 import { Calendar } from "./pages/Calendar.js";
@@ -81,48 +83,63 @@ function Shell({ onLogout }: { onLogout: () => void }) {
     active: location === `/trackers/${t.slug}`,
   }));
 
+  // A pinned tracker gets its own TrackerChrome header in place of this
+  // shared nav, on every one of its routes (Home, a table, Integrations,
+  // Edit) -- decided here, once, from the same pinned list already
+  // fetched for the sidebar above, rather than re-deriving it per page.
+  // An unpinned tracker (or `/trackers`/`/trackers/new` themselves) falls
+  // through to the ordinary shared nav unchanged.
+  const activeTrackerSlug = /^\/trackers\/([^/]+)(?:\/|$)/.exec(location)?.[1];
+  const activeTracker = activeTrackerSlug && activeTrackerSlug !== "new" ? pinnedTrackers.find((t) => t.slug === activeTrackerSlug) : undefined;
+
   return (
     <div className="min-h-screen flex bg-background text-foreground">
       <AppSwitcher authBaseUrl={AUTH_BASE_URL} currentAppId="home" iconMap={ICON_COMPONENTS} extraItems={extraItems} />
       <div className="flex-1 flex flex-col min-w-0">
         <MobileAppSwitcher authBaseUrl={AUTH_BASE_URL} currentAppId="home" iconMap={ICON_COMPONENTS} extraItems={extraItems} />
-        <header className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <nav className="flex gap-1">
-            <NavLink href="/">Home</NavLink>
-            <NavLink href="/todos">Todos</NavLink>
-            <NavLink href="/calendar">Calendar</NavLink>
-            <NavLink href="/goals">Goals</NavLink>
-            <NavLink href="/trackers">Trackers</NavLink>
-            <NavLink href="/appearance">Appearance</NavLink>
-            <NavLink href="/tokens">Developer</NavLink>
-          </nav>
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            {user?.email && <span>{user.email}</span>}
-            <button onClick={onLogout} className="hover:text-foreground">
-              Sign out
-            </button>
-          </div>
-        </header>
+        {activeTracker ? (
+          <TrackerChrome tracker={activeTracker} email={user?.email} onLogout={onLogout} />
+        ) : (
+          <header className="flex items-center justify-between px-6 py-4 border-b border-border">
+            <nav className="flex gap-1">
+              <NavLink href="/">Home</NavLink>
+              <NavLink href="/todos">Todos</NavLink>
+              <NavLink href="/calendar">Calendar</NavLink>
+              <NavLink href="/goals">Goals</NavLink>
+              <NavLink href="/trackers">Trackers</NavLink>
+              <NavLink href="/appearance">Appearance</NavLink>
+              <NavLink href="/tokens">Developer</NavLink>
+            </nav>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              {user?.email && <span>{user.email}</span>}
+              <button onClick={onLogout} className="hover:text-foreground">
+                Sign out
+              </button>
+            </div>
+          </header>
+        )}
         <main className="flex-1 p-6 min-w-0">
-          <Switch>
-            <Route path="/" component={Home} />
-            <Route path="/todos" component={Todos} />
-            <Route path="/calendar" component={Calendar} />
-            <Route path="/goals" component={Goals} />
-            <Route path="/trackers" component={Trackers} />
-            <Route path="/trackers/new" component={NewTracker} />
-            <Route path="/trackers/:slug/edit" component={EditTrackerMeta} />
-            <Route path="/trackers/:slug/tables/new" component={NewTable} />
-            <Route path="/trackers/:slug/tables/:tableKey/edit" component={EditTable} />
-            <Route path="/trackers/:slug/tables/:tableKey" component={TrackerView} />
-            <Route path="/trackers/:slug/integrations" component={Integrations} />
-            <Route path="/trackers/:slug" component={TrackerHome} />
-            <Route path="/tokens" component={Tokens} />
-            <Route path="/appearance" component={Appearance} />
-            <Route>
-              <p className="text-muted-foreground">Page not found.</p>
-            </Route>
-          </Switch>
+          <TrackerChromeContext.Provider value={!!activeTracker}>
+            <Switch>
+              <Route path="/" component={Home} />
+              <Route path="/todos" component={Todos} />
+              <Route path="/calendar" component={Calendar} />
+              <Route path="/goals" component={Goals} />
+              <Route path="/trackers" component={Trackers} />
+              <Route path="/trackers/new" component={NewTracker} />
+              <Route path="/trackers/:slug/edit" component={EditTrackerMeta} />
+              <Route path="/trackers/:slug/tables/new" component={NewTable} />
+              <Route path="/trackers/:slug/tables/:tableKey/edit" component={EditTable} />
+              <Route path="/trackers/:slug/tables/:tableKey" component={TrackerView} />
+              <Route path="/trackers/:slug/integrations" component={Integrations} />
+              <Route path="/trackers/:slug" component={TrackerHome} />
+              <Route path="/tokens" component={Tokens} />
+              <Route path="/appearance" component={Appearance} />
+              <Route>
+                <p className="text-muted-foreground">Page not found.</p>
+              </Route>
+            </Switch>
+          </TrackerChromeContext.Provider>
         </main>
       </div>
     </div>

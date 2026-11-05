@@ -3,8 +3,9 @@ import { Link, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { Plus } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { customApi, formatValue, type Entry, type FieldDef, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
+import { ACCENT_HEX, ACCENT_NAMES, customApi, formatValue, type Entry, type FieldDef, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
 import { FieldValue, type LinkTarget } from "../components/FieldInput.js";
+import { usePinnedTrackerChrome } from "../lib/trackerChromeContext.js";
 import { TableTabs, entryLabel } from "./TrackerView.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
@@ -153,6 +154,7 @@ interface PeriodStats {
  * of its own so the two feel like one navigation model, not two. */
 export function TrackerHome() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
+  const pinned = usePinnedTrackerChrome();
   const [, params] = useRoute("/trackers/:slug");
   const slug = params?.slug ?? "";
   const [meta, setMeta] = useState<TrackerMeta | null>(null);
@@ -261,7 +263,7 @@ export function TrackerHome() {
   if (!primary) {
     return (
       <div className="max-w-xl">
-        <h1 className="text-2xl mb-2">{meta.name}</h1>
+        {!pinned && <h1 className="text-2xl mb-2">{meta.name}</h1>}
         {meta.description && <p className="text-sm text-muted-foreground mb-6">{meta.description}</p>}
         <div className="bg-card border border-border rounded-lg p-6 text-center">
           <p className="text-sm text-muted-foreground mb-4">This tracker doesn't have any tables yet. A table is one kind of thing you log here (e.g. "Log", "Notes").</p>
@@ -280,10 +282,12 @@ export function TrackerHome() {
 
   return (
     <div className="max-w-3xl relative pb-24">
-      <div className="mb-2">
-        <h1 className="text-2xl">{meta.name}</h1>
-        {meta.description && <p className="text-sm text-muted-foreground mt-1">{meta.description}</p>}
-      </div>
+      {!pinned && (
+        <div className="mb-2">
+          <h1 className="text-2xl">{meta.name}</h1>
+          {meta.description && <p className="text-sm text-muted-foreground mt-1">{meta.description}</p>}
+        </div>
+      )}
 
       <TableTabs trackerSlug={slug} tables={tables} />
 
@@ -316,32 +320,50 @@ export function TrackerHome() {
         </div>
       </div>
 
+      {/* Hero stat card, Cronometer-style hierarchy: the period total is
+          the headline (bigger, accent-tinted), "Entries"/"vs last period"
+          flank it as smaller secondary numbers, rather than three equal
+          boxes competing for attention. */}
       {stats && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-card border border-border rounded-lg p-4">
-            <div className="text-xs text-muted-foreground mb-1">Total this period</div>
-            <div className="text-2xl">{stats.total}{stats.unit !== "none" && stats.unit ? ` ${stats.unit}` : ""}</div>
+        <div className="bg-card border border-border rounded-xl p-6 mb-6 flex items-center gap-8 flex-wrap">
+          <div className="bg-accent rounded-lg px-5 py-4 flex-shrink-0">
+            <div className="text-xs text-accent-foreground/70 mb-1">Total this period</div>
+            <div className="text-3xl font-semibold text-accent-foreground">{stats.total}{stats.unit !== "none" && stats.unit ? ` ${stats.unit}` : ""}</div>
           </div>
-          <div className="bg-card border border-border rounded-lg p-4">
-            <div className="text-xs text-muted-foreground mb-1">Entries</div>
-            <div className="text-2xl">{entries.length}</div>
-          </div>
-          <div className="bg-card border border-border rounded-lg p-4">
-            <div className="text-xs text-muted-foreground mb-1">vs last period</div>
-            <div className="text-2xl">{delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}</div>
+          <div className="flex gap-8 flex-wrap">
+            <div>
+              <div className="text-xl font-semibold">{entries.length}</div>
+              <div className="text-xs text-muted-foreground">entries logged</div>
+            </div>
+            <div>
+              <div className={"text-xl font-semibold " + (delta !== null && delta > 0 ? "text-success" : delta !== null && delta < 0 ? "text-destructive" : "")}>
+                {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}
+              </div>
+              <div className="text-xs text-muted-foreground">vs last period</div>
+            </div>
           </div>
         </div>
       )}
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         {groups.length === 0 && <p className="p-6 text-sm text-muted-foreground text-center">No entries this period.</p>}
-        {groups.map((g) => (
+        {groups.map((g, i) => {
+          const dotColor = g.category ? ACCENT_HEX[ACCENT_NAMES[i % ACCENT_NAMES.length]!] : null;
+          return (
           <div key={g.category}>
-            {g.category && <div className="px-4 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{g.category}</div>}
+            {g.category && (
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: dotColor ?? undefined }} />
+                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: dotColor ?? undefined }}>{g.category}</span>
+              </div>
+            )}
             {g.entries.map((entry) => (
               <div key={entry.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0 gap-4">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm">{entryLabel(primary, entry)}</div>
+                  <div className="flex items-center gap-2 text-sm">
+                    {dotColor && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: dotColor }} />}
+                    {entryLabel(primary, entry)}
+                  </div>
                   {rowFields.length > 0 && (
                     <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                       {rowFields.map((f) => (
@@ -359,19 +381,29 @@ export function TrackerHome() {
               </div>
             ))}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* The real cross-table quick-add (pick which of this tracker's own
           tables, then a form shaped by its fields) isn't built yet -- this
           links straight to the primary table's own, already-working Add
-          form rather than stub a button that does nothing. */}
-      <Link
-        href={`/trackers/${slug}/tables/${primary.table_key}`}
-        className="fixed bottom-8 right-8 flex items-center gap-2 bg-primary text-primary-foreground rounded-full pl-4 pr-5 py-3 shadow-lg hover:opacity-90"
-      >
-        <Plus className="h-4 w-4" /> Log entry
-      </Link>
+          form rather than stub a button that does nothing. Bigger and
+          glowing (a blurred primary-colored copy behind the real pill)
+          for the same "this is the one thing to press" prominence the
+          mockup gives it, not a plain small FAB. */}
+      <div className="fixed bottom-8 right-8 z-10">
+        <div className="absolute inset-1 rounded-full bg-primary opacity-30 blur-md" aria-hidden="true" />
+        <Link
+          href={`/trackers/${slug}/tables/${primary.table_key}`}
+          className="relative flex items-center gap-2 bg-primary text-primary-foreground rounded-full pl-4 pr-5 py-3.5 shadow-lg hover:opacity-90 font-medium"
+        >
+          <span className="w-7 h-7 rounded-full bg-primary-foreground/20 flex items-center justify-center flex-shrink-0">
+            <Plus className="h-4 w-4" />
+          </span>
+          Log entry
+        </Link>
+      </div>
     </div>
   );
 }

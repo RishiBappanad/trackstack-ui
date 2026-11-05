@@ -9,6 +9,7 @@ import { TrackerChart } from "../components/TrackerChart.js";
 import { TrackerList } from "../components/TrackerList.js";
 import { NumberRangeFilter, type NumberRange } from "../components/NumberRangeFilter.js";
 import { FieldInput, type LinkOption, type LinkTarget } from "../components/FieldInput.js";
+import { usePinnedTrackerChrome } from "../lib/trackerChromeContext.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -191,6 +192,7 @@ export function TableTabs({ trackerSlug, tables, activeKey }: { trackerSlug: str
 
 export function TrackerView() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
+  const pinned = usePinnedTrackerChrome();
   const [, params] = useRoute("/trackers/:slug/tables/:tableKey");
   const [, navigate] = useLocation();
   const slug = params?.slug ?? "";
@@ -353,18 +355,20 @@ export function TrackerView() {
 
   return (
     <div className="max-w-3xl">
-      <div className="flex items-start justify-between mb-2 gap-4">
-        <div>
-          <h1 className="text-2xl">{meta.name}</h1>
-          {meta.description && <p className="text-sm text-muted-foreground mt-1">{meta.description}</p>}
+      {!pinned && (
+        <div className="flex items-start justify-between mb-2 gap-4">
+          <div>
+            <h1 className="text-2xl">{meta.name}</h1>
+            {meta.description && <p className="text-sm text-muted-foreground mt-1">{meta.description}</p>}
+          </div>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
+            <Link href="/trackers" className="hover:text-foreground">All trackers</Link>
+            <Link href={`/trackers/${slug}/integrations`} className="hover:text-foreground">Integrations</Link>
+            <Link href={`/trackers/${slug}/edit`} className="hover:text-foreground">Edit tracker</Link>
+            <button onClick={deleteTracker} className="hover:text-destructive">Delete tracker</button>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
-          <Link href="/trackers" className="hover:text-foreground">All trackers</Link>
-          <Link href={`/trackers/${slug}/integrations`} className="hover:text-foreground">Integrations</Link>
-          <Link href={`/trackers/${slug}/edit`} className="hover:text-foreground">Edit tracker</Link>
-          <button onClick={deleteTracker} className="hover:text-destructive">Delete tracker</button>
-        </div>
-      </div>
+      )}
 
       <TableTabs trackerSlug={slug} tables={tables} activeKey={tableKey} />
 
@@ -375,6 +379,11 @@ export function TrackerView() {
         <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
           <Link href={`/trackers/${slug}/tables/${tableKey}/edit`} className="hover:text-foreground">Edit table</Link>
           {tables.length > 1 && <button onClick={deleteTable} className="hover:text-destructive">Delete table</button>}
+          {/* Chrome's own header covers Integrations/Edit tracker for a
+              pinned tracker (TrackerChrome), but not the destructive
+              delete action -- kept reachable here instead of promoting it
+              into that persistent top strip. */}
+          {pinned && <button onClick={deleteTracker} className="hover:text-destructive">Delete tracker</button>}
         </div>
       </div>
 
