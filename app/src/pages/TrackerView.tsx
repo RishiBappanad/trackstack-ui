@@ -23,7 +23,7 @@ type FormState = Record<string, string | boolean | string[]>;
  * cross-tracker target this app has no visibility into (link()'s own
  * fetch still succeeds, there's just no field metadata to pick a label
  * from), in which case every entry just falls back to its id. */
-function entryLabel(table: TableDef | undefined, entry: Entry): string {
+export function entryLabel(table: TableDef | undefined, entry: Entry): string {
   if (table?.label_field) {
     const v = entry.values[table.label_field];
     if (v !== undefined && v !== "") return String(v);
@@ -150,13 +150,23 @@ function numberBounds(entries: Entry[], key: string): { min: number; max: number
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 
-/** Table-tabs navigation across this tracker's own tables -- the one
- * piece of chrome shared between `/trackers/:slug` (which never renders
- * its own content, just redirects here or to the empty-state below) and
- * every `/trackers/:slug/tables/:tableKey` page. */
-function TableTabs({ trackerSlug, tables, activeKey }: { trackerSlug: string; tables: { table_key: string; name: string }[]; activeKey?: string }) {
+/** Table-tabs navigation across this tracker's own tables -- shared
+ * chrome between every `/trackers/:slug/tables/:tableKey` page and
+ * TrackerHome.tsx's own snapshot. A leading "Home" tab is always shown
+ * (active whenever `activeKey` is omitted, i.e. on the snapshot itself)
+ * so the two feel like one navigation model, not two. */
+export function TableTabs({ trackerSlug, tables, activeKey }: { trackerSlug: string; tables: { table_key: string; name: string }[]; activeKey?: string }) {
   return (
     <div className="flex items-center gap-1 border-b border-border mb-6 overflow-x-auto">
+      <Link
+        href={`/trackers/${trackerSlug}`}
+        className={
+          "px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px " +
+          (!activeKey ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")
+        }
+      >
+        Home
+      </Link>
       {tables.map((t) => (
         <Link
           key={t.table_key}
@@ -175,51 +185,6 @@ function TableTabs({ trackerSlug, tables, activeKey }: { trackerSlug: string; ta
       >
         <Plus className="h-3.5 w-3.5" /> Add table
       </Link>
-    </div>
-  );
-}
-
-/** `/trackers/:slug` itself -- never renders tracker content directly
- * (the real content is always one specific table, per
- * MULTI_TABLE_TRACKERS_SPEC.md's table-scoped routing). Lands on the
- * first table if one exists, or prompts to create one if not. */
-export function TrackerHome() {
-  const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
-  const [, params] = useRoute("/trackers/:slug");
-  const [, navigate] = useLocation();
-  const slug = params?.slug ?? "";
-  const [meta, setMeta] = useState<TrackerMeta | null>(null);
-  const [tables, setTables] = useState<{ table_key: string; name: string }[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!slug) return;
-    Promise.all([customApi(`/trackers/${slug}`, token), customApi(`/trackers/${slug}/tables`, token)])
-      .then(([m, t]) => {
-        setMeta(m as TrackerMeta);
-        setTables(t as { table_key: string; name: string }[]);
-      })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Could not load the tracker"));
-  }, [slug, token]);
-
-  useEffect(() => {
-    if (tables && tables.length > 0) navigate(`/trackers/${slug}/tables/${tables[0]!.table_key}`, { replace: true });
-  }, [tables, slug, navigate]);
-
-  if (error) return <p className="text-destructive text-sm">{error}</p>;
-  if (!meta || !tables) return null;
-  if (tables.length > 0) return null; // redirecting
-
-  return (
-    <div className="max-w-xl">
-      <h1 className="text-2xl mb-2">{meta.name}</h1>
-      {meta.description && <p className="text-sm text-muted-foreground mb-6">{meta.description}</p>}
-      <div className="bg-card border border-border rounded-lg p-6 text-center">
-        <p className="text-sm text-muted-foreground mb-4">This tracker doesn't have any tables yet. A table is one kind of thing you log here (e.g. "Log", "Notes").</p>
-        <Link href={`/trackers/${slug}/tables/new`} className="inline-flex items-center gap-1 bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium">
-          <Plus className="h-4 w-4" /> Add a table
-        </Link>
-      </div>
     </div>
   );
 }

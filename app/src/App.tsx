@@ -13,7 +13,8 @@ import { Tokens } from "./pages/Tokens.js";
 import { Appearance } from "./pages/Appearance.js";
 import { Trackers } from "./pages/Trackers.js";
 import { NewTracker, EditTrackerMeta, NewTable, EditTable } from "./pages/TrackerBuilder.js";
-import { TrackerHome, TrackerView } from "./pages/TrackerView.js";
+import { TrackerView } from "./pages/TrackerView.js";
+import { TrackerHome } from "./pages/TrackerHome.js";
 import { Integrations } from "./pages/Integrations.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
