@@ -26,6 +26,7 @@ export function TrackerChrome({
   const Icon = ICON_COMPONENTS[tracker.icon];
   const base = `/trackers/${tracker.slug}`;
   const onIntegrations = location === `${base}/integrations`;
+  const onGoals = location === `${base}/goals`;
   const onEdit = location === `${base}/edit`;
 
   function linkClass(active: boolean) {
@@ -33,7 +34,7 @@ export function TrackerChrome({
   }
 
   return (
-    <header className="flex items-center justify-between gap-4 px-6 py-3 bg-foreground text-background flex-shrink-0">
+    <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 md:px-6 py-3 bg-foreground text-background flex-shrink-0">
       <div className="flex items-center gap-5 min-w-0">
         <Link href={base} className="flex items-center gap-2 min-w-0 flex-shrink-0">
           <span className="w-7 h-7 rounded-lg bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
@@ -43,6 +44,7 @@ export function TrackerChrome({
         </Link>
         <nav className="flex items-center gap-4 overflow-x-auto">
           <Link href={base} className={linkClass(location === base)}>Home</Link>
+          <Link href={`${base}/goals`} className={linkClass(onGoals)}>Goals</Link>
           <Link href={`${base}/integrations`} className={linkClass(onIntegrations)}>Integrations</Link>
           <Link href={`${base}/edit`} className={linkClass(onEdit)}>Edit tracker</Link>
         </nav>

@@ -174,6 +174,91 @@ export interface TrackerIntegration {
   enabled: boolean;
 }
 
+/** RECURRING_AND_GOALS_SPEC.md's Goals, ported to trackstack-custom
+ * (CLAUDE.md) -- mirrors trackstack-custom's own definitions.ts exactly,
+ * minus the full advanced GoalQuery builder this app's own UI doesn't
+ * offer yet (only the "basic goal" shorthand does, in Goals.tsx) --
+ * these types still describe the FULL stored shape a goal comes back as,
+ * since GET .../goals always returns one regardless of which form
+ * created it. */
+export const GOAL_AGGREGATIONS = ["sum", "mean", "median", "min", "max", "count", "percentile"] as const;
+export type GoalAggregation = (typeof GOAL_AGGREGATIONS)[number];
+
+export const GOAL_FILTER_OPERATORS = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "contains"] as const;
+export type GoalFilterOperator = (typeof GOAL_FILTER_OPERATORS)[number];
+
+export interface GoalFilterCondition {
+  field: string;
+  operator: GoalFilterOperator;
+  value: string | number | boolean | (string | number)[];
+}
+
+export const GOAL_QUERY_PERIODS = ["daily", "weekly", "monthly"] as const;
+export type GoalQueryPeriod = (typeof GOAL_QUERY_PERIODS)[number];
+
+export const GOAL_TIME_WINDOW_KINDS = ["current_period", "trailing", "same_period_last_year", "fixed_range", "all_time"] as const;
+export type GoalTimeWindowKind = (typeof GOAL_TIME_WINDOW_KINDS)[number];
+
+export interface GoalTimeWindow {
+  kind: GoalTimeWindowKind;
+  period?: GoalQueryPeriod;
+  count?: number;
+  start?: string;
+  end?: string;
+}
+
+export interface GoalQuery {
+  aggregation: GoalAggregation;
+  percentile?: number;
+  measureField?: string;
+  filters: GoalFilterCondition[];
+  timeWindow: GoalTimeWindow;
+}
+
+export const GOAL_COMPARATORS = ["gte", "lte", "eq", "within_tolerance_percent"] as const;
+export type GoalComparator = (typeof GOAL_COMPARATORS)[number];
+
+export const GOAL_COMPARATOR_LABELS: Record<GoalComparator, string> = {
+  gte: "At least",
+  lte: "At most",
+  eq: "Exactly",
+  within_tolerance_percent: "Within tolerance of",
+};
+
+export const GOAL_SEVERITIES = ["warning", "target"] as const;
+export type GoalSeverity = (typeof GOAL_SEVERITIES)[number];
+
+export interface Goal {
+  id: number;
+  source_table_key: string;
+  label: string;
+  severity: GoalSeverity;
+  is_active: boolean;
+  comparator: GoalComparator;
+  tolerance_percent: number | null;
+  measure_query: GoalQuery;
+  reference_amount: number | null;
+  reference_query: GoalQuery | null;
+  scale: number | null;
+  inflation_adjusted: boolean;
+  notify_on_crossing: boolean;
+  target_date: string | null;
+  start_value: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /trackers/:slug/goals/:id/status's live-computed response --
+ * always fresh, never a value stored anywhere. */
+export interface GoalStatus {
+  measure: number;
+  reference: number;
+  compliant: boolean;
+  /** null when reference is 0 -- percent-of-zero is meaningless. */
+  percent: number | null;
+  term: "everyday" | "long_term";
+}
+
 /** A slug derived from `text` that isn't already in `taken`. */
 export function uniqueSlug(text: string, taken: string[]): string {
   const base = slugify(text) || "field";

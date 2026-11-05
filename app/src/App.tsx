@@ -17,6 +17,7 @@ import { Trackers } from "./pages/Trackers.js";
 import { NewTracker, EditTrackerMeta, NewTable, EditTable } from "./pages/TrackerBuilder.js";
 import { TrackerView } from "./pages/TrackerView.js";
 import { TrackerHome } from "./pages/TrackerHome.js";
+import { TrackerGoals } from "./pages/TrackerGoals.js";
 import { Integrations } from "./pages/Integrations.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
@@ -49,7 +50,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
     <Link
       href={href}
       className={
-        "px-3 py-2 rounded-md text-sm font-medium " +
+        "px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap " +
         (active ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")
       }
     >
@@ -100,8 +101,11 @@ function Shell({ onLogout }: { onLogout: () => void }) {
         {activeTracker ? (
           <TrackerChrome tracker={activeTracker} email={user?.email} onLogout={onLogout} />
         ) : (
-          <header className="flex items-center justify-between px-6 py-4 border-b border-border">
-            <nav className="flex gap-1">
+          <header className="flex items-center justify-between gap-3 px-4 md:px-6 py-3 md:py-4 border-b border-border">
+            {/* min-w-0 + overflow-x-auto: on a phone the 7 links scroll sideways inside the
+                header instead of stretching the whole page past the viewport. */}
+            <nav className="flex gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+              {/* whitespace-nowrap is on NavLink itself so links never wrap mid-label */}
               <NavLink href="/">Home</NavLink>
               <NavLink href="/todos">Todos</NavLink>
               <NavLink href="/calendar">Calendar</NavLink>
@@ -110,15 +114,15 @@ function Shell({ onLogout }: { onLogout: () => void }) {
               <NavLink href="/appearance">Appearance</NavLink>
               <NavLink href="/tokens">Developer</NavLink>
             </nav>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              {user?.email && <span>{user.email}</span>}
-              <button onClick={onLogout} className="hover:text-foreground">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
+              {user?.email && <span className="hidden md:inline">{user.email}</span>}
+              <button onClick={onLogout} className="hover:text-foreground whitespace-nowrap">
                 Sign out
               </button>
             </div>
           </header>
         )}
-        <main className="flex-1 p-6 min-w-0">
+        <main className="flex-1 p-4 md:p-6 min-w-0">
           <TrackerChromeContext.Provider value={!!activeTracker}>
             <Switch>
               <Route path="/" component={Home} />
@@ -131,6 +135,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
               <Route path="/trackers/:slug/tables/new" component={NewTable} />
               <Route path="/trackers/:slug/tables/:tableKey/edit" component={EditTable} />
               <Route path="/trackers/:slug/tables/:tableKey" component={TrackerView} />
+              <Route path="/trackers/:slug/goals" component={TrackerGoals} />
               <Route path="/trackers/:slug/integrations" component={Integrations} />
               <Route path="/trackers/:slug" component={TrackerHome} />
               <Route path="/tokens" component={Tokens} />

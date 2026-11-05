@@ -363,6 +363,7 @@ export function TrackerView() {
           </div>
           <div className="flex items-center gap-3 text-sm text-muted-foreground flex-shrink-0">
             <Link href="/trackers" className="hover:text-foreground">All trackers</Link>
+            <Link href={`/trackers/${slug}/goals`} className="hover:text-foreground">Goals</Link>
             <Link href={`/trackers/${slug}/integrations`} className="hover:text-foreground">Integrations</Link>
             <Link href={`/trackers/${slug}/edit`} className="hover:text-foreground">Edit tracker</Link>
             <button onClick={deleteTracker} className="hover:text-destructive">Delete tracker</button>

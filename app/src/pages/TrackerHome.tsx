@@ -3,7 +3,7 @@ import { Link, useRoute } from "wouter";
 import { useTrackStackAuth } from "trackstack-ui";
 import { Plus } from "lucide-react";
 import { ApiError } from "../lib/api.js";
-import { ACCENT_HEX, ACCENT_NAMES, customApi, formatValue, type Entry, type FieldDef, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
+import { ACCENT_HEX, ACCENT_NAMES, customApi, formatValue, type Entry, type FieldDef, type Goal, type GoalStatus, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
 import { FieldValue, type LinkTarget } from "../components/FieldInput.js";
 import { usePinnedTrackerChrome } from "../lib/trackerChromeContext.js";
 import { TableTabs, entryLabel } from "./TrackerView.js";
@@ -164,6 +164,13 @@ export function TrackerHome() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
   const [stats, setStats] = useState<PeriodStats | null>(null);
+  // The one active goal (if any) scoped to the primary table -- drives
+  // the hero's progress ring in place of the plain stat card below when
+  // present. Picking just the first match (not every active goal on this
+  // table) keeps the mockup's single-ring layout rather than needing a
+  // multi-ring design for a case no tracker has hit yet (Tenet #2).
+  const [featuredGoal, setFeaturedGoal] = useState<Goal | null>(null);
+  const [featuredStatus, setFeaturedStatus] = useState<GoalStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -190,6 +197,8 @@ export function TrackerHome() {
         setEntries([]);
         setLinkTargets({});
         setStats(null);
+        setFeaturedGoal(null);
+        setFeaturedStatus(null);
         setLoaded(true);
         setError(null);
         return;
@@ -244,6 +253,27 @@ export function TrackerHome() {
         }
       }));
       setLinkTargets(targets);
+
+      // The hero ring's data source (RECURRING_AND_GOALS_SPEC.md's
+      // Goals, see TrackerGoals.tsx for where one gets created/enabled).
+      // Best-effort: a tracker with no goals yet (the ordinary case,
+      // before this feature existed) just falls back to the plain stat
+      // card below, same as any other optional role in this app.
+      try {
+        const goalsRes = (await customApi(`/trackers/${slug}/goals`, token)) as Goal[];
+        const candidate = goalsRes.find((g) => g.is_active && g.source_table_key === table.table_key) ?? null;
+        if (candidate) {
+          setFeaturedGoal(candidate);
+          setFeaturedStatus((await customApi(`/trackers/${slug}/goals/${candidate.id}/status`, token)) as GoalStatus);
+        } else {
+          setFeaturedGoal(null);
+          setFeaturedStatus(null);
+        }
+      } catch {
+        setFeaturedGoal(null);
+        setFeaturedStatus(null);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load this tracker");
@@ -320,29 +350,71 @@ export function TrackerHome() {
         </div>
       </div>
 
-      {/* Hero stat card, Cronometer-style hierarchy: the period total is
-          the headline (bigger, accent-tinted), "Entries"/"vs last period"
-          flank it as smaller secondary numbers, rather than three equal
-          boxes competing for attention. */}
-      {stats && (
+      {/* Hero: a goal's own progress ring + flanking stats when this
+          table has one active (Cronometer-style "ring + flanking stats"
+          the mockup designed around), falling back to the plain stat
+          card (period total as the headline) when it doesn't -- a
+          tracker that never creates a Goal sees exactly today's layout,
+          unchanged. */}
+      {featuredGoal && featuredStatus ? (
         <div className="bg-card border border-border rounded-xl p-6 mb-6 flex items-center gap-8 flex-wrap">
-          <div className="bg-accent rounded-lg px-5 py-4 flex-shrink-0">
-            <div className="text-xs text-accent-foreground/70 mb-1">Total this period</div>
-            <div className="text-3xl font-semibold text-accent-foreground">{stats.total}{stats.unit !== "none" && stats.unit ? ` ${stats.unit}` : ""}</div>
-          </div>
-          <div className="flex gap-8 flex-wrap">
-            <div>
-              <div className="text-xl font-semibold">{entries.length}</div>
-              <div className="text-xs text-muted-foreground">entries logged</div>
-            </div>
-            <div>
-              <div className={"text-xl font-semibold " + (delta !== null && delta > 0 ? "text-success" : delta !== null && delta < 0 ? "text-destructive" : "")}>
-                {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}
+          <div className="relative w-40 h-40 flex-shrink-0">
+            <svg width="160" height="160" viewBox="0 0 160 160" className="absolute inset-0" style={{ transform: "rotate(-90deg)" }} aria-hidden="true">
+              <circle cx="80" cy="80" r="68" fill="none" strokeWidth="14" style={{ stroke: "hsl(var(--accent))" }} />
+              <circle
+                cx="80" cy="80" r="68" fill="none" strokeWidth="14" strokeLinecap="round"
+                style={{ stroke: "hsl(var(--primary))" }}
+                strokeDasharray={`${(Math.min(featuredStatus.percent ?? 0, 100) / 100) * (2 * Math.PI * 68)} ${2 * Math.PI * 68}`}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-3">
+              <div className="text-2xl font-semibold">{Math.round(featuredStatus.measure * 10) / 10}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                of {featuredStatus.reference}{featuredGoal.measure_query.timeWindow.period ? ` per ${featuredGoal.measure_query.timeWindow.period.replace("ly", "")}` : ""}
               </div>
-              <div className="text-xs text-muted-foreground">vs last period</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 flex-1 min-w-[220px]">
+            <div className="text-sm">
+              <span className={featuredStatus.compliant ? "text-success" : "text-muted-foreground"}>{featuredStatus.compliant ? "On track" : "Not there yet"}</span>
+              <span className="text-muted-foreground"> toward </span>
+              <b>{featuredGoal.label || `${featuredStatus.reference}`}</b>
+            </div>
+            <div className="flex gap-8 flex-wrap">
+              <div>
+                <div className="text-xl font-semibold">{entries.length}</div>
+                <div className="text-xs text-muted-foreground">entries logged</div>
+              </div>
+              <div>
+                <div className={"text-xl font-semibold " + (delta !== null && delta > 0 ? "text-success" : delta !== null && delta < 0 ? "text-destructive" : "")}>
+                  {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}
+                </div>
+                <div className="text-xs text-muted-foreground">vs last period</div>
+              </div>
             </div>
           </div>
         </div>
+      ) : (
+        stats && (
+          <div className="bg-card border border-border rounded-xl p-6 mb-6 flex items-center gap-8 flex-wrap">
+            <div className="bg-accent rounded-lg px-5 py-4 flex-shrink-0">
+              <div className="text-xs text-accent-foreground/70 mb-1">Total this period</div>
+              <div className="text-3xl font-semibold text-accent-foreground">{stats.total}{stats.unit !== "none" && stats.unit ? ` ${stats.unit}` : ""}</div>
+            </div>
+            <div className="flex gap-8 flex-wrap">
+              <div>
+                <div className="text-xl font-semibold">{entries.length}</div>
+                <div className="text-xs text-muted-foreground">entries logged</div>
+              </div>
+              <div>
+                <div className={"text-xl font-semibold " + (delta !== null && delta > 0 ? "text-success" : delta !== null && delta < 0 ? "text-destructive" : "")}>
+                  {delta === null ? "—" : `${delta > 0 ? "+" : ""}${delta}%`}
+                </div>
+                <div className="text-xs text-muted-foreground">vs last period</div>
+              </div>
+            </div>
+          </div>
+        )
       )}
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
