@@ -152,6 +152,28 @@ export function slugify(text: string): string {
   return /^[a-z]/.test(s) ? s : s ? `f_${s}`.slice(0, 40) : "";
 }
 
+/** MULTI_TABLE_TRACKERS_SPEC.md's Tracker Integrations (Phase 4b backend,
+ * Phase 6c UI) -- the two ways a tracker's own writes can fire out to the
+ * rest of TrackStack. Owned by the TRACKER, not the table: `source_table_key`
+ * just says which of the tracker's own tables triggers this one binding,
+ * since a tracker can bind the same type to several of its own tables
+ * independently. Mirrors trackstack-custom's definitions.ts exactly. */
+export const INTEGRATION_TYPES = ["todo_sync", "calendar_push"] as const;
+export type IntegrationType = (typeof INTEGRATION_TYPES)[number];
+
+export const INTEGRATION_TYPE_LABELS: Record<IntegrationType, string> = {
+  todo_sync: "Todo sync",
+  calendar_push: "Calendar push",
+};
+
+export interface TrackerIntegration {
+  type: IntegrationType;
+  source_table_key: string;
+  /** todo_sync: { done_field: string }. calendar_push: always {}. */
+  config: Record<string, unknown>;
+  enabled: boolean;
+}
+
 /** A slug derived from `text` that isn't already in `taken`. */
 export function uniqueSlug(text: string, taken: string[]): string {
   const base = slugify(text) || "field";
