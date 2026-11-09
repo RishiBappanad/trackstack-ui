@@ -4,8 +4,8 @@ import { useTrackStackAuth } from "trackstack-ui";
 import { Plus, Trash2 } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import {
-  customApi, GOAL_COMPARATOR_LABELS, GOAL_SEVERITIES,
-  type Goal, type GoalComparator, type GoalSeverity, type GoalStatus, type TableDef, type TrackerMeta,
+  customApi, BASIC_GOAL_AGGREGATIONS, BASIC_GOAL_AGGREGATION_LABELS, GOAL_COMPARATOR_LABELS, GOAL_SEVERITIES,
+  type BasicGoalAggregation, type Goal, type GoalComparator, type GoalSeverity, type GoalStatus, type TableDef, type TrackerMeta,
 } from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
@@ -25,15 +25,30 @@ interface NewGoalDraft {
   sourceTableKey: string;
   category: string;
   comparator: GoalComparator;
+  aggregation: BasicGoalAggregation;
   targetAmount: string;
   period: Period;
   severity: GoalSeverity;
   label: string;
 }
 
+/** Whether `table` can back a goal using `aggregation` -- "count" needs
+ * nothing but entries existing (true for every table), but sum/mean/min/
+ * max read a real number off each entry, so they need a summable
+ * amount_field the same way the table's own Home hero stat does. Table
+ * eligibility is therefore a function of the CHOSEN aggregation, not a
+ * fixed property of the table -- a table with no summable field (like
+ * one whose only number is explicitly marked non-summable, e.g. a salary
+ * field nobody wants added across job applications) is still a perfectly
+ * good "count entries" goal target. */
+function eligibleFor(table: TableDef, aggregation: BasicGoalAggregation): boolean {
+  return aggregation === "count" || !!(table.amount_field && table.summable);
+}
+
 function emptyDraft(tables: TableDef[]): NewGoalDraft {
-  const eligible = tables.find((t) => t.amount_field && t.summable);
-  return { sourceTableKey: eligible?.table_key ?? "", category: "", comparator: "gte", targetAmount: "", period: "weekly", severity: "target", label: "" };
+  const summable = tables.find((t) => t.amount_field && t.summable);
+  const aggregation: BasicGoalAggregation = summable ? "sum" : "count";
+  return { sourceTableKey: (summable ?? tables[0])?.table_key ?? "", category: "", comparator: "gte", aggregation, targetAmount: "", period: "weekly", severity: "target", label: "" };
 }
 
 /** `/trackers/:slug/goals` -- this TRACKER's own Goals management: define
@@ -99,8 +114,6 @@ export function TrackerGoals() {
     load();
   }, [load]);
 
-  const summableTables = tables.filter((t) => t.amount_field && t.summable);
-
   function categoryOptionsFor(tableKey: string): string[] {
     const table = tables.find((t) => t.table_key === tableKey);
     if (!table?.category_field) return [];
@@ -110,6 +123,31 @@ export function TrackerGoals() {
   function unitFor(tableKey: string): string | undefined {
     const table = tables.find((t) => t.table_key === tableKey);
     return table?.fields.find((f) => f.key === table.amount_field)?.unit;
+  }
+
+  const PERIOD_NOUN: Record<string, string> = { daily: "day", weekly: "week", monthly: "month" };
+
+  /** A count goal's measure/reference are bare entry counts, never the
+   * table's own amount_field unit -- "0 / 3", not "0 min / 3 min". Every
+   * other aggregation DOES read that unit (it's summing/averaging actual
+   * values off the field), so this is the one place unit display has to
+   * branch on aggregation rather than just following unitFor(). */
+  function unitForDisplay(g: Goal): string | undefined {
+    return g.measure_query.aggregation === "count" ? undefined : unitFor(g.source_table_key);
+  }
+
+  /** "at least 3 entries per day" (count, no unit to show) vs. "at least
+   * 50 min per week" (sum, the amount field's own unit) vs. "average 20
+   * per week" (mean/min/max named explicitly, since those read oddly as
+   * a bare number the way "sum" always has). */
+  function goalSummary(g: Goal): string {
+    const unit = unitForDisplay(g);
+    const amount = g.reference_amount ?? "a computed value";
+    const period = PERIOD_NOUN[g.measure_query.timeWindow.period ?? ""] ?? g.measure_query.timeWindow.period ?? "period";
+    const comparator = GOAL_COMPARATOR_LABELS[g.comparator];
+    if (g.measure_query.aggregation === "count") return `${comparator} ${amount} ${amount === 1 ? "entry" : "entries"} per ${period}`;
+    const aggLabel = g.measure_query.aggregation !== "sum" ? `${BASIC_GOAL_AGGREGATION_LABELS[g.measure_query.aggregation as BasicGoalAggregation] ?? g.measure_query.aggregation} · ` : "";
+    return `${aggLabel}${comparator} ${amount}${unit ? ` ${unit}` : ""} per ${period}`;
   }
 
   async function createGoal() {
@@ -122,6 +160,7 @@ export function TrackerGoals() {
         body: JSON.stringify({
           source_table_key: draft.sourceTableKey,
           comparator: draft.comparator,
+          aggregation: draft.aggregation,
           target_amount: Number(draft.targetAmount),
           period: draft.period,
           severity: draft.severity,
@@ -168,8 +207,8 @@ export function TrackerGoals() {
 
       {error && <div className="mb-4 bg-destructive/10 border border-destructive text-destructive text-sm rounded-md px-3 py-2">{error}</div>}
 
-      {summableTables.length === 0 ? (
-        <p className="text-sm text-muted-foreground mb-6">A goal needs a table with a summable amount field (set one under that table's own "How other apps and AI read it") -- none of this tracker's tables have one yet.</p>
+      {tables.length === 0 ? (
+        <p className="text-sm text-muted-foreground mb-6">This tracker doesn't have any tables yet -- a goal needs one to count or sum entries from.</p>
       ) : (
         <>
           <div className="grid gap-3 mb-4">
@@ -177,13 +216,13 @@ export function TrackerGoals() {
             {goals.map((g) => {
               const table = tables.find((t) => t.table_key === g.source_table_key);
               const status = statuses[g.id];
-              const unit = unitFor(g.source_table_key);
+              const unit = unitForDisplay(g);
               return (
                 <div key={g.id} className="flex items-center justify-between gap-3 bg-card border border-border rounded-lg p-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{g.label || `${table?.name ?? g.source_table_key} goal`}</div>
                     <div className="text-xs text-muted-foreground">
-                      {table?.name ?? g.source_table_key} · {GOAL_COMPARATOR_LABELS[g.comparator]} {g.reference_amount ?? "a computed value"}{unit ? ` ${unit}` : ""} per {g.measure_query.timeWindow.period ?? "period"}
+                      {table?.name ?? g.source_table_key} · {goalSummary(g)}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -205,15 +244,26 @@ export function TrackerGoals() {
             })}
           </div>
 
-          {draft && (
+          {draft && (() => {
+            const selectedTable = tables.find((t) => t.table_key === draft.sourceTableKey);
+            const eligible = !selectedTable || eligibleFor(selectedTable, draft.aggregation);
+            return (
             <div className="bg-card border border-border rounded-lg p-4">
               <div className="text-sm font-medium mb-3">New goal</div>
               <div className="flex flex-wrap items-end gap-2">
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   Table
                   <select value={draft.sourceTableKey} onChange={(e) => setDraft({ ...draft, sourceTableKey: e.target.value, category: "" })} className={inputClass}>
-                    {summableTables.map((t) => (
+                    {tables.map((t) => (
                       <option key={t.table_key} value={t.table_key}>{t.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Aggregation
+                  <select value={draft.aggregation} onChange={(e) => setDraft({ ...draft, aggregation: e.target.value as BasicGoalAggregation })} className={inputClass}>
+                    {BASIC_GOAL_AGGREGATIONS.map((a) => (
+                      <option key={a} value={a}>{BASIC_GOAL_AGGREGATION_LABELS[a]}</option>
                     ))}
                   </select>
                 </label>
@@ -237,7 +287,7 @@ export function TrackerGoals() {
                   </select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Target{unitFor(draft.sourceTableKey) ? ` (${unitFor(draft.sourceTableKey)})` : ""}
+                  Target{draft.aggregation === "count" ? " (count)" : unitFor(draft.sourceTableKey) ? ` (${unitFor(draft.sourceTableKey)})` : ""}
                   <input type="number" value={draft.targetAmount} onChange={(e) => setDraft({ ...draft, targetAmount: e.target.value })} className={inputClass + " w-24"} />
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -260,12 +310,18 @@ export function TrackerGoals() {
                     ))}
                   </select>
                 </label>
-                <button type="button" onClick={createGoal} disabled={saving || !draft.targetAmount} className="flex items-center gap-1 bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50">
+                <button type="button" onClick={createGoal} disabled={saving || !draft.targetAmount || !eligible} title={eligible ? undefined : "This table needs a summable amount field for sum/average/min/max -- pick Count instead, or set one under this table's own \"How other apps and AI read it\""} className="flex items-center gap-1 bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50">
                   <Plus className="h-4 w-4" /> Add goal
                 </button>
               </div>
+              {!eligible && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  "{selectedTable?.name}" has no summable amount field, so {BASIC_GOAL_AGGREGATION_LABELS[draft.aggregation].toLowerCase()} isn't available for it -- pick Count instead, or set one under this table's own "How other apps and AI read it".
+                </p>
+              )}
             </div>
-          )}
+            );
+          })()}
         </>
       )}
     </div>

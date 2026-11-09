@@ -225,6 +225,22 @@ export const GOAL_COMPARATOR_LABELS: Record<GoalComparator, string> = {
   within_tolerance_percent: "Within tolerance of",
 };
 
+/** The subset of GOAL_AGGREGATIONS the "basic goal" shorthand accepts
+ * (TrackerGoals.tsx's creation form, mirroring the backend's own
+ * BASIC_AGGREGATIONS in validateGoalBody) -- "median"/"percentile" both
+ * need an extra parameter the shorthand has no field for, so they're
+ * only reachable through the full GoalQuery shape (no UI yet). */
+export const BASIC_GOAL_AGGREGATIONS = ["sum", "count", "mean", "min", "max"] as const;
+export type BasicGoalAggregation = (typeof BASIC_GOAL_AGGREGATIONS)[number];
+
+export const BASIC_GOAL_AGGREGATION_LABELS: Record<BasicGoalAggregation, string> = {
+  sum: "Sum",
+  count: "Count",
+  mean: "Average",
+  min: "Minimum",
+  max: "Maximum",
+};
+
 export const GOAL_SEVERITIES = ["warning", "target"] as const;
 export type GoalSeverity = (typeof GOAL_SEVERITIES)[number];
 
