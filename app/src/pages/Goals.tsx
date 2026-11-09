@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTrackStackAuth, useAppRegistry } from "trackstack-ui";
 import { Target, Trash2, CheckCircle2, AlertTriangle, Plus, ExternalLink } from "lucide-react";
 import { apiFetch, ApiError } from "../lib/api.js";
+import { usePinnedTrackers, CUSTOM_BASE_URL } from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -14,6 +15,16 @@ const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 // itself rather than reading one central index the way Calendar's
 // /api/calendar does -- a new tracker with Goals appears with no change here.
 //
+// trackstack-custom is a SECOND, structurally different kind of candidate:
+// it's one registered service that can itself hold any number of a user's
+// own dynamic trackers, each with its own goals under
+// /trackers/:slug/goals -- not one flat goals list under its own API base
+// the way every other (registered-app) source is. Scoped to PINNED
+// trackers only, same "this deserves first-class, cross-app status" signal
+// Home.tsx's own "Your trackers" section and the sidebar's AppSwitcher
+// already use -- not every tracker a user has, which would make this page
+// noisy and inconsistent with what Home already shows as "yours".
+//
 // TODO (workspace-notes/ACTION_ITEMS.md, "Goals card registration"): probing
 // is the interim. Trackers should REGISTER their goal-card layout (label,
 // units, what to show) through trackstack-ui, and this page should render
@@ -22,8 +33,17 @@ interface GoalSource {
   id: string;
   label: string;
   apiBase: string;
-  /** The endpoint that answered: "/api/goals" (Express trackers) or "/goals" (FastAPI). */
+  /** The endpoint that answered: "/api/goals" (Express trackers), "/goals"
+   * (FastAPI), or "/trackers/:slug/goals" (one pinned trackstack-custom
+   * tracker) -- in every case, `${apiBase}${goalsPath}/:id` and
+   * `${apiBase}${goalsPath}/:id/status` are this source's real endpoints,
+   * so the rest of this page never needs to branch on which kind a source
+   * is. */
   goalsPath: string;
+  /** This source's own goals page, within THIS app (a relative path) for
+   * a custom tracker, or undefined for a registered app (trackerGoalsHref
+   * resolves that case from the app registry instead, as before). */
+  localHref?: string;
 }
 
 /** Where each candidate's goals API might live, tried in order. */
@@ -325,9 +345,85 @@ async function probeForGoals(appId: string, label: string, token: string | null)
   return null;
 }
 
+// ── trackstack-custom's own shape -- see this file's own doc comment on
+// why it's a second, structurally different kind of source. Field names
+// genuinely differ from the registered-app Goal/GoalStatus above
+// (is_active not active, measure/reference/compliant not measure_value/
+// reference_value/on_track) -- mapped once here rather than bent to fit,
+// same reasoning CLAUDE.md gives for not sharing this shape across repos.
+
+interface CustomGoal {
+  id: number;
+  label: string;
+  severity: Severity;
+  is_active: boolean;
+  comparator: Comparator;
+  tolerance_percent: number | null;
+  measure_query: GoalQuery;
+  reference_amount: number | null;
+  reference_query: GoalQuery | null;
+}
+
+interface CustomGoalStatus {
+  measure: number;
+  reference: number;
+  compliant: boolean;
+  percent: number | null;
+}
+
+/** A count goal's numbers are bare entry counts -- formatAmount's own
+ * dollars-by-default fallback (no unit given) would show "$3", which is
+ * actively misleading here. Every other aggregation already has the
+ * table's own amount_field unit baked into reference_amount/measure by
+ * the time they reach this page... except trackstack-custom doesn't send
+ * one at all (its own Goal shape has no `unit` field) -- so "entries" is
+ * this page's own synthesized label, good enough for a generic card,
+ * not a claim about what the tracker itself calls it. */
+function unitForCustomGoal(g: CustomGoal): string | undefined {
+  return g.measure_query.aggregation === "count" ? (g.reference_amount === 1 ? "entry" : "entries") : undefined;
+}
+
+function customGoalToGoal(g: CustomGoal): Goal {
+  return {
+    id: g.id,
+    label: g.label || null,
+    severity: g.severity,
+    comparator: g.comparator,
+    tolerance_percent: g.tolerance_percent,
+    measure_query: g.measure_query,
+    reference_amount: g.reference_amount,
+    reference_query: g.reference_query,
+    inflation_adjusted: false,
+    unit: unitForCustomGoal(g),
+  };
+}
+
+function customStatusToGoalStatus(s: CustomGoalStatus): GoalStatus {
+  return { measure_value: s.measure, reference_value: s.reference, percent: s.percent ?? 0, on_track: s.compliant, has_data: true };
+}
+
+/** One pinned trackstack-custom tracker's own ACTIVE goals -- `is_active`
+ * filtering happens here, client-side, since this endpoint (unlike the
+ * registered-app probe above) has no `?active=true` query param of its
+ * own to ask for that. `goalsPath` is this tracker's own nested path
+ * (/trackers/:slug/goals), so every downstream status/delete call that
+ * builds `${apiBase}${goalsPath}/:id...` just works, unchanged, exactly
+ * as it already does for a registered-app source. */
+async function probeCustomTracker(slug: string, name: string, token: string | null): Promise<{ source: GoalSource; goals: Goal[] } | null> {
+  const goalsPath = `/trackers/${slug}/goals`;
+  const raw = (await apiFetch(CUSTOM_BASE_URL, goalsPath, token)) as CustomGoal[];
+  const active = raw.filter((g) => g.is_active);
+  if (active.length === 0) return null;
+  return {
+    source: { id: `custom:${slug}`, label: name, apiBase: CUSTOM_BASE_URL, goalsPath, localHref: `/trackers/${slug}/goals` },
+    goals: active.map(customGoalToGoal),
+  };
+}
+
 export function Goals() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const apps = useAppRegistry(AUTH_BASE_URL);
+  const pinnedTrackers = usePinnedTrackers(CUSTOM_BASE_URL, token);
   const [items, setItems] = useState<SourcedGoal[]>([]);
   const [sources, setSources] = useState<GoalSource[]>([]);
   const [loading, setLoading] = useState(false);
@@ -336,10 +432,16 @@ export function Goals() {
   // A source's own goals page, not this page, is where creating and editing
   // actually happens -- resolved from the SAME app registry AppSwitcher/Home's
   // own tracker links already use, so it can't drift from wherever that
-  // tracker is actually reachable in this deployment.
+  // tracker is actually reachable in this deployment. A custom-tracker source
+  // already carries its own same-origin href (localHref), since it has no
+  // entry in the app registry to resolve one from.
   const trackerGoalsHref = useMemo(() => {
     const map: Record<string, string> = {};
     for (const source of sources) {
+      if (source.localHref) {
+        map[source.id] = source.localHref;
+        continue;
+      }
       const app = apps.find((a) => a.id === source.id);
       if (app) map[source.id] = `${app.href}${GOALS_PAGE_PATH[source.id] ?? "/goals"}`;
     }
@@ -349,35 +451,60 @@ export function Goals() {
   useEffect(() => {
     // The registry lists Home itself too; it isn't a tracker.
     const candidates = apps.filter((a) => a.id !== "home");
-    if (!token || candidates.length === 0) return;
+    if (!token || (candidates.length === 0 && pinnedTrackers.length === 0)) return;
     let cancelled = false;
     setLoading(true);
     setErrors([]);
     setItems([]);
     setSources([]);
 
-    Promise.all(
-      candidates.map(async (app) => {
-        try {
-          const found = await probeForGoals(app.id, app.label, token);
-          if (!found) return [];
-          if (!cancelled) setSources((prev) => [...prev, found.source]);
-          const statuses = await Promise.all(
-            found.goals.map((goal) =>
-              apiFetch(found.source.apiBase, `${found.source.goalsPath}/${goal.id}/status`, token)
-                .then((s) => s as GoalStatus)
-                .catch(() => undefined)
-            )
-          );
-          return found.goals.map((goal, i): SourcedGoal => ({ source: found.source, goal, status: statuses[i] }));
-        } catch (e) {
-          if (!cancelled) {
-            setErrors((prev) => [...prev, { source: app.label, error: e instanceof ApiError ? e.message : "Failed to load" }]);
-          }
-          return [];
+    const registeredAppTasks = candidates.map(async (app) => {
+      try {
+        const found = await probeForGoals(app.id, app.label, token);
+        if (!found) return [];
+        if (!cancelled) setSources((prev) => [...prev, found.source]);
+        const statuses = await Promise.all(
+          found.goals.map((goal) =>
+            apiFetch(found.source.apiBase, `${found.source.goalsPath}/${goal.id}/status`, token)
+              .then((s) => s as GoalStatus)
+              .catch(() => undefined)
+          )
+        );
+        return found.goals.map((goal, i): SourcedGoal => ({ source: found.source, goal, status: statuses[i] }));
+      } catch (e) {
+        if (!cancelled) {
+          setErrors((prev) => [...prev, { source: app.label, error: e instanceof ApiError ? e.message : "Failed to load" }]);
         }
-      })
-    ).then((results) => {
+        return [];
+      }
+    });
+
+    // Pinned trackstack-custom trackers -- each probed on its own nested
+    // goals path, filtered to is_active client-side, and mapped through
+    // customGoalToGoal/customStatusToGoalStatus so the rest of this page
+    // (status fetch, delete, the card itself) stays generic.
+    const customTrackerTasks = pinnedTrackers.map(async (t) => {
+      try {
+        const found = await probeCustomTracker(t.slug, t.name, token);
+        if (!found) return [];
+        if (!cancelled) setSources((prev) => [...prev, found.source]);
+        const statuses = await Promise.all(
+          found.goals.map((goal) =>
+            apiFetch(found.source.apiBase, `${found.source.goalsPath}/${goal.id}/status`, token)
+              .then((s) => customStatusToGoalStatus(s as CustomGoalStatus))
+              .catch(() => undefined)
+          )
+        );
+        return found.goals.map((goal, i): SourcedGoal => ({ source: found.source, goal, status: statuses[i] }));
+      } catch (e) {
+        if (!cancelled) {
+          setErrors((prev) => [...prev, { source: t.name, error: e instanceof ApiError ? e.message : "Failed to load" }]);
+        }
+        return [];
+      }
+    });
+
+    Promise.all([...registeredAppTasks, ...customTrackerTasks]).then((results) => {
       if (!cancelled) setItems(results.flat());
     }).finally(() => {
       if (!cancelled) setLoading(false);
@@ -386,7 +513,7 @@ export function Goals() {
     return () => {
       cancelled = true;
     };
-  }, [token, apps]);
+  }, [token, apps, pinnedTrackers]);
 
   async function handleDelete(item: SourcedGoal) {
     setItems((prev) => prev.filter((i) => !(i.source.id === item.source.id && i.goal.id === item.goal.id)));
