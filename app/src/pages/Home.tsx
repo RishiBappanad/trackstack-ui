@@ -3,6 +3,7 @@ import { useTrackStackAuth, useCurrentUser, useAppRegistry } from "trackstack-ui
 import { Link } from "wouter";
 import { CheckSquare, KeyRound, CalendarDays, Target, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { apiFetch, ApiError } from "../lib/api.js";
+import { usePinnedTrackers, ICON_COMPONENTS, CUSTOM_BASE_URL } from "../lib/customTrackers.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -93,6 +94,14 @@ export function Home() {
   const { token } = useTrackStackAuth({ authBaseUrl: AUTH_BASE_URL });
   const { user } = useCurrentUser(AUTH_BASE_URL, token);
   const apps = useAppRegistry(AUTH_BASE_URL);
+  // "Your trackers" below used to only ever show `apps` -- trackstack-auth's
+  // hardcoded registry of deployed SERVICES (home/finance/nutrition), which
+  // has no idea a single one of those services (trackstack-custom) can hold
+  // any number of a user's own dynamic trackers. Pinned ones are the same
+  // signal the sidebar's AppSwitcher already uses for "this deserves
+  // first-class, app-like status" (see TrackerChrome's own doc comment) --
+  // reusing it here instead of inventing a second concept.
+  const pinnedTrackers = usePinnedTrackers(CUSTOM_BASE_URL, token);
 
   return (
     <div className="max-w-3xl">
@@ -134,7 +143,7 @@ export function Home() {
         </Link>
         <Link
           href="/tokens"
-          className="flex items-center gap-3 bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
+          className="max-md:hidden flex items-center gap-3 bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
         >
           <KeyRound className="h-5 w-5 text-primary flex-shrink-0" />
           <div>
@@ -144,7 +153,7 @@ export function Home() {
         </Link>
       </div>
 
-      {apps.length > 0 && (
+      {(apps.length > 0 || pinnedTrackers.length > 0) && (
         <div>
           <h2 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">Your trackers</h2>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -157,6 +166,19 @@ export function Home() {
                 <div className="font-medium text-sm">{app.label}</div>
               </a>
             ))}
+            {pinnedTrackers.map((t) => {
+              const Icon = ICON_COMPONENTS[t.icon];
+              return (
+                <Link
+                  key={`custom_${t.slug}`}
+                  href={`/trackers/${t.slug}`}
+                  className="flex items-center gap-3 bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
+                >
+                  {Icon && <Icon className="h-4 w-4 text-primary flex-shrink-0" />}
+                  <div className="font-medium text-sm">{t.name}</div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
