@@ -24,6 +24,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # TIER_2_CUSTOM_LAYOUT_SPEC.md's Guardrails, Security layer 4: this
+      # is the FIRST test gate this pipeline has ever had -- added
+      # specifically so the sandbox-attribute guardrail's "build-time
+      # grep gate" and "runtime DOM assertion" layers are actually
+      # ENFORCED before a bad image ever gets built, not just present as
+      # code nobody runs. If this ever needs a broader test suite later,
+      # extend this step rather than adding a second one.
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Tier 2 sandbox guardrail (grep gate + unit tests)
+        working-directory: app
+        run: |
+          npm run guard:sandbox
+          npm test
+
       - id: auth
         uses: google-github-actions/auth@v2
         with:

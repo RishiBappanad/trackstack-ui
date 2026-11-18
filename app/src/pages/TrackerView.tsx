@@ -366,6 +366,11 @@ export function TrackerView() {
             <Link href={`/trackers/${slug}/goals`} className="hover:text-foreground">Goals</Link>
             <Link href={`/trackers/${slug}/integrations`} className="hover:text-foreground">Integrations</Link>
             <Link href={`/trackers/${slug}/edit`} className="hover:text-foreground">Edit tracker</Link>
+            {/* TIER_2_CUSTOM_LAYOUT_SPEC.md's deliberate escape hatch for
+                an UNPINNED tracker -- TrackerChrome covers the pinned
+                case. Outside TrackerHome's own content area, so always
+                reachable regardless of what a Tier 2 layout is doing. */}
+            <Link href={`/trackers/${slug}/layout`} className="hover:text-foreground">Layout</Link>
             <button onClick={deleteTracker} className="hover:text-destructive">Delete tracker</button>
           </div>
         </div>

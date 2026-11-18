@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { ApiError } from "../lib/api.js";
 import { ACCENT_HEX, ACCENT_NAMES, customApi, formatValue, type Entry, type FieldDef, type Goal, type GoalStatus, type TableDef, type TrackerMeta } from "../lib/customTrackers.js";
 import { FieldValue, type LinkTarget } from "../components/FieldInput.js";
+import { Tier2CustomLayoutView } from "../components/Tier2CustomLayoutView.js";
 import { usePinnedTrackerChrome } from "../lib/trackerChromeContext.js";
 import { TableTabs, entryLabel } from "./TrackerView.js";
 
@@ -289,6 +290,24 @@ export function TrackerHome() {
 
   if (error) return <p className="text-destructive text-sm">{error}</p>;
   if (!meta || !loaded) return null;
+
+  // TIER_2_CUSTOM_LAYOUT_SPEC.md: a Tier 2 tracker's home view is the
+  // author's own sandboxed layout, not this page's Tier 1 rendering
+  // below -- checked BEFORE the `!primary` branch, since a Tier 2
+  // tracker doesn't need a table at all to have a real home view.
+  if (meta.layout_tier === 2 && meta.custom_ui_html) {
+    return (
+      <div className="max-w-5xl">
+        {!pinned && <h1 className="text-2xl mb-4">{meta.name}</h1>}
+        <Tier2CustomLayoutView
+          trackerSlug={slug}
+          html={meta.custom_ui_html}
+          token={token}
+          className="w-full h-[75vh] border border-border rounded-lg bg-card"
+        />
+      </div>
+    );
+  }
 
   if (!primary) {
     return (

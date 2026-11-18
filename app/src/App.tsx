@@ -19,6 +19,7 @@ import { TrackerView } from "./pages/TrackerView.js";
 import { TrackerHome } from "./pages/TrackerHome.js";
 import { TrackerGoals } from "./pages/TrackerGoals.js";
 import { Integrations } from "./pages/Integrations.js";
+import { TrackerLayout } from "./pages/TrackerLayout.js";
 
 const AUTH_BASE_URL = import.meta.env.VITE_TRACKSTACK_AUTH_URL ?? "";
 
@@ -137,6 +138,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
               <Route path="/trackers/:slug/tables/:tableKey" component={TrackerView} />
               <Route path="/trackers/:slug/goals" component={TrackerGoals} />
               <Route path="/trackers/:slug/integrations" component={Integrations} />
+              <Route path="/trackers/:slug/layout" component={TrackerLayout} />
               <Route path="/trackers/:slug" component={TrackerHome} />
               <Route path="/tokens" component={Tokens} />
               <Route path="/appearance" component={Appearance} />

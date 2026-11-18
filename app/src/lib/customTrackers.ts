@@ -68,12 +68,25 @@ export interface FieldDef {
  * used before): a tracker is just its own identity/sidebar info; a
  * table is one object type within it, addable independently. Mirrors
  * trackstack-custom's definitions.ts TrackerMeta/TableDef exactly. */
+// TIER_2_CUSTOM_LAYOUT_SPEC.md. layout_tier/custom_ui_html (published)
+// only ever change together, through POST .../layout/publish --
+// PATCH /trackers/:slug can revert layout_tier to 1 but can never set
+// it to 2 directly, and never touches custom_ui_html at all; it CAN
+// write custom_ui_html_draft, which is never rendered as the tracker's
+// real home view, only previewed in the builder. Mirrors
+// trackstack-custom's definitions.ts TrackerMeta exactly.
+export const LAYOUT_TIERS = [1, 2] as const;
+export type LayoutTier = (typeof LAYOUT_TIERS)[number];
+
 export interface TrackerMeta {
   slug: string;
   name: string;
   description: string;
   icon: IconName | null;
   pinned: boolean;
+  layout_tier: LayoutTier;
+  custom_ui_html: string | null;
+  custom_ui_html_draft: string;
 }
 
 export interface TableDef {

@@ -28,6 +28,7 @@ export function TrackerChrome({
   const onIntegrations = location === `${base}/integrations`;
   const onGoals = location === `${base}/goals`;
   const onEdit = location === `${base}/edit`;
+  const onLayout = location === `${base}/layout`;
 
   function linkClass(active: boolean) {
     return "text-xs font-semibold whitespace-nowrap " + (active ? "text-background" : "text-background/55 hover:text-background");
@@ -47,6 +48,11 @@ export function TrackerChrome({
           <Link href={`${base}/goals`} className={linkClass(onGoals)}>Goals</Link>
           <Link href={`${base}/integrations`} className={linkClass(onIntegrations)}>Integrations</Link>
           <Link href={`${base}/edit`} className={linkClass(onEdit)}>Edit tracker</Link>
+          {/* TIER_2_CUSTOM_LAYOUT_SPEC.md's deliberate escape hatch: this
+              nav row renders OUTSIDE wherever a Tier 2 layout's own
+              content goes (TrackerHome), so it's always reachable
+              regardless of what that layout is doing. */}
+          <Link href={`${base}/layout`} className={linkClass(onLayout)}>Layout</Link>
         </nav>
       </div>
       <div className="flex items-center gap-4 text-xs text-background/55 flex-shrink-0">
